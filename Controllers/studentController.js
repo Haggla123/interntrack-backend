@@ -3,37 +3,49 @@ const User   = require('../models/User');
 const Log    = require('../models/Log');
 const Grade  = require('../models/Grade');
 const crypto = require('crypto');
-const { Resend } = require('resend');
-
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 const makeTempPassword = () =>
   'UENR-' + crypto.randomBytes(6).toString('base64url').slice(0, 8);
 
+const sendEmail = async (to, subject, html) => {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
+    body: JSON.stringify({
+      sender:      { name: 'UENR InternTrack', email: 'noreply@uenr.edu.gh' },
+      to:          [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Brevo error ${res.status}`);
+  }
+};
+
 const sendPasswordResetEmail = async (email, name, tempPassword, identifier) => {
   if (!email) return;
-  await resend.emails.send({
-    from:    'UENR InternTrack <onboarding@resend.dev>',
-    to:      email,
-    subject: 'InternTrack – Your Password Has Been Reset',
-    html: `
-      <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
-        <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
-        <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — Password Reset</p>
-        <hr style="border:0;border-top:1px solid #eee;" />
-        <h3 style="color:#2c5282;">Hi ${name},</h3>
-        <p>Your InternTrack password has been reset by an administrator.</p>
-        <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #e53e3e;">
-          <p style="margin:5px 0;"><strong>Login ID:</strong> ${identifier}</p>
-          <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;font-size:18px;">${tempPassword}</span></p>
-          <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
-        </div>
-        <p style="font-size:0.85em;color:#718096;">You will be asked to set a new password after logging in.</p>
-        <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
-          &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
-        </footer>
-      </div>`,
-  });
+  await sendEmail(
+    email,
+    'InternTrack – Your Password Has Been Reset',
+    `<div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
+      <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
+      <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — Password Reset</p>
+      <hr style="border:0;border-top:1px solid #eee;" />
+      <h3 style="color:#2c5282;">Hi ${name},</h3>
+      <p>Your InternTrack password has been reset by an administrator.</p>
+      <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #e53e3e;">
+        <p style="margin:5px 0;"><strong>Login ID:</strong> ${email}</p>
+        <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;font-size:18px;">${tempPassword}</span></p>
+        <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
+      </div>
+      <p style="font-size:0.85em;color:#718096;">You will be asked to set a new password after logging in.</p>
+      <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
+        &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
+      </footer>
+    </div>`
+  );
 };
 
 // ── GET /api/students ────────────────────────────────────────────

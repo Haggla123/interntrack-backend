@@ -1,7 +1,21 @@
-const User       = require('../models/User');
-const { Resend } = require('resend');
+const User = require('../models/User');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const sendEmail = async (to, subject, html) => {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
+    body: JSON.stringify({
+      sender:      { name: 'UENR InternTrack', email: 'noreply@uenr.edu.gh' },
+      to:          [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Brevo error ${res.status}`);
+  }
+};
 
 const broadcast = async (req, res) => {
   try {
@@ -29,12 +43,7 @@ const broadcast = async (req, res) => {
           </footer>
         </div>`;
       try {
-        await resend.emails.send({
-          from:    'UENR InternTrack <onboarding@resend.dev>',
-          to:      recipient.email,
-          subject: subject.trim(),
-          html:    htmlBody,
-        });
+        await sendEmail(recipient.email, subject.trim(), htmlBody);
         results.sent++;
       } catch (mailErr) {
         results.failed++;

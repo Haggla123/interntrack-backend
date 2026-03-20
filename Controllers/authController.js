@@ -1,49 +1,64 @@
 // Controllers/authController.js
-const jwt        = require('jsonwebtoken');
-const crypto     = require('crypto');
-const User       = require('../models/User');
-const { Resend } = require('resend');
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+const jwt    = require('jsonwebtoken');
+const crypto = require('crypto');
+const User   = require('../models/User');
 
 const makeTempPassword = () =>
   'UENR-' + crypto.randomBytes(6).toString('base64url').slice(0, 8);
+
+// Send email via Brevo (formerly Sendinblue) HTTP API
+// Works on all cloud hosts — no SMTP, no domain verification needed
+const sendEmail = async (to, subject, html) => {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method:  'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key':      process.env.BREVO_API_KEY,
+    },
+    body: JSON.stringify({
+      sender:   { name: 'UENR InternTrack', email: 'noreply@uenr.edu.gh' },
+      to:       [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Brevo error ${res.status}`);
+  }
+};
 
 const sendWelcomeEmail = async (email, name, tempPassword, role = 'student', identifier = '') => {
   const roleLabel = role === 'student'   ? 'Student'
                   : role === 'academic'  ? 'Academic Supervisor'
                   : role === 'admin'     ? 'Administrator'
                   : 'Industrial Supervisor';
-  await resend.emails.send({
-    from:    'UENR InternTrack <onboarding@resend.dev>',
-    to:      email,
-    subject: 'Your InternTrack Login Details – UENR',
-    html: `
-      <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
-        <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
-        <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — ${roleLabel} Account</p>
-        <hr style="border:0;border-top:1px solid #eee;" />
-        <h3 style="color:#2c5282;">Hi ${name},</h3>
-        <p>Welcome to <strong>InternTrack</strong>! Your account has been created. Use the credentials below to log in.</p>
-        <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #3182ce;">
-          <p style="margin:5px 0;"><strong>Login ID:</strong> ${identifier || email}</p>
-          <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;">${tempPassword}</span></p>
-          <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
-        </div>
-        <div style="text-align:center;margin:28px 0;">
-          <a href="${process.env.CLIENT_URL}/login"
-             style="background:#3182ce;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">
-            Login to Portal
-          </a>
-        </div>
-        <p style="font-size:0.85em;color:#718096;">
-          <strong>Security Notice:</strong> Change this temporary password on your first login.
-        </p>
-        <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
-          &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
-        </footer>
-      </div>`,
-  });
+  await sendEmail(
+    email,
+    'Your InternTrack Login Details – UENR',
+    `<div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
+      <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
+      <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — ${roleLabel} Account</p>
+      <hr style="border:0;border-top:1px solid #eee;" />
+      <h3 style="color:#2c5282;">Hi ${name},</h3>
+      <p>Welcome to <strong>InternTrack</strong>! Your account has been created. Use the credentials below to log in.</p>
+      <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #3182ce;">
+        <p style="margin:5px 0;"><strong>Login ID:</strong> ${email}</p>
+        <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;">${tempPassword}</span></p>
+        <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
+      </div>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${process.env.CLIENT_URL}/login"
+           style="background:#3182ce;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">
+          Login to Portal
+        </a>
+      </div>
+      <p style="font-size:0.85em;color:#718096;"><strong>Security Notice:</strong> Change this temporary password on your first login.</p>
+      <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
+        &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
+      </footer>
+    </div>`
+  );
 };
 
 const signToken = (user) =>

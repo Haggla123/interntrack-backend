@@ -1,75 +1,73 @@
 // Controllers/placementController.js
-const Placement  = require('../models/Placement');
-const Company    = require('../models/Company');
-const User       = require('../models/User');
-const { Resend } = require('resend');
+const Placement = require('../models/Placement');
+const Company   = require('../models/Company');
+const User      = require('../models/User');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const sendEmail = async (to, subject, html) => {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
+    body: JSON.stringify({
+      sender:      { name: 'UENR InternTrack', email: 'noreply@uenr.edu.gh' },
+      to:          [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Brevo error ${res.status}`);
+  }
+};
 
 const sendSupervisorCredentials = async (email, name, tempPassword, company) => {
   if (!email) return;
-  await resend.emails.send({
-    from: 'UENR InternTrack <onboarding@resend.dev>',
-    to:   email,
-    subject: `InternTrack – Your Supervisor Account for ${company.name}`,
-    html: `
-      <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
-        <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
-        <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — Industrial Supervisor Account</p>
-        <hr style="border:0;border-top:1px solid #eee;" />
-        <h3 style="color:#2c5282;">Hi ${name || 'Supervisor'},</h3>
-        <p>A student has been placed at <strong>${company.name}</strong> and your account has been created on the UENR InternTrack system.</p>
-        <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #3182ce;">
-          <p style="margin:5px 0;"><strong>Login Email:</strong> ${email}</p>
-          <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;">${tempPassword}</span></p>
-          <p style="margin:5px 0;"><strong>Company:</strong> ${company.name}</p>
-          <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
-        </div>
-        <div style="text-align:center;margin:28px 0;">
-          <a href="${process.env.CLIENT_URL}/login"
-             style="background:#3182ce;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">
-            Login to Supervisor Portal
-          </a>
-        </div>
-        <p style="font-size:0.85em;color:#718096;"><strong>Security Notice:</strong> Please change this temporary password after your first login.</p>
-        <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
-          &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
-        </footer>
-      </div>`,
-  });
+  await sendEmail(
+    email,
+    `InternTrack – Your Supervisor Account for ${company.name}`,
+    `<div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
+      <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
+      <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — Industrial Supervisor Account</p>
+      <hr style="border:0;border-top:1px solid #eee;" />
+      <h3 style="color:#2c5282;">Hi ${name || 'Supervisor'},</h3>
+      <p>A student has been placed at <strong>${company.name}</strong> and your account has been created.</p>
+      <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #3182ce;">
+        <p style="margin:5px 0;"><strong>Login Email:</strong> ${email}</p>
+        <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;">${tempPassword}</span></p>
+        <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
+      </div>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${process.env.CLIENT_URL}/login" style="background:#3182ce;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">Login to Supervisor Portal</a>
+      </div>
+      <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
+        &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
+      </footer>
+    </div>`
+  );
 };
 
 const sendNewInternNotification = async (supervisor, student, company) => {
   if (!supervisor?.email) return;
-  await resend.emails.send({
-    from: 'UENR InternTrack <onboarding@resend.dev>',
-    to:   supervisor.email,
-    subject: `InternTrack – New Intern Assigned at ${company.name}`,
-    html: `
-      <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
-        <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
-        <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — Industrial Supervisor</p>
-        <hr style="border:0;border-top:1px solid #eee;" />
-        <h3 style="color:#2c5282;">Hi ${supervisor.name || 'Supervisor'},</h3>
-        <p>A new intern has been assigned to your supervision at <strong>${company.name}</strong>.</p>
-        <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #38a169;">
-          <p style="margin:5px 0;"><strong>Intern Name:</strong> ${student.name || 'N/A'}</p>
-          <p style="margin:5px 0;"><strong>Index Number:</strong> ${student.indexNumber || 'N/A'}</p>
-          <p style="margin:5px 0;"><strong>Company:</strong> ${company.name}</p>
-          <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
-        </div>
-        <p>Log in to your existing supervisor account to view their logbook entries and track their progress.</p>
-        <div style="text-align:center;margin:28px 0;">
-          <a href="${process.env.CLIENT_URL}/login"
-             style="background:#38a169;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">
-            Go to Supervisor Portal
-          </a>
-        </div>
-        <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
-          &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
-        </footer>
-      </div>`,
-  });
+  await sendEmail(
+    supervisor.email,
+    `InternTrack – New Intern Assigned at ${company.name}`,
+    `<div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
+      <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
+      <h3 style="color:#2c5282;">Hi ${supervisor.name || 'Supervisor'},</h3>
+      <p>A new intern has been assigned to your supervision at <strong>${company.name}</strong>.</p>
+      <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #38a169;">
+        <p style="margin:5px 0;"><strong>Intern Name:</strong> ${student.name || 'N/A'}</p>
+        <p style="margin:5px 0;"><strong>Index Number:</strong> ${student.indexNumber || 'N/A'}</p>
+        <p style="margin:5px 0;"><strong>Company:</strong> ${company.name}</p>
+      </div>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${process.env.CLIENT_URL}/login" style="background:#38a169;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">Go to Supervisor Portal</a>
+      </div>
+      <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
+        &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
+      </footer>
+    </div>`
+  );
 };
 
 const submitPlacementRequest = async (req, res) => {
