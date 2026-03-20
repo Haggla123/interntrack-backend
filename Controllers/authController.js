@@ -2,29 +2,21 @@
 const jwt        = require('jsonwebtoken');
 const crypto     = require('crypto');
 const User       = require('../models/User');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host:   'smtp.gmail.com',
-    port:   587,
-    secure: false, // TLS on port 587 (not SSL on 465)
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-    tls: { rejectUnauthorized: false },
-  });
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const makeTempPassword = () =>
   'UENR-' + crypto.randomBytes(6).toString('base64url').slice(0, 8);
 
 const sendWelcomeEmail = async (email, name, tempPassword, role = 'student', identifier = '') => {
-  const transporter = createTransporter();
   const roleLabel = role === 'student'   ? 'Student'
                   : role === 'academic'  ? 'Academic Supervisor'
                   : role === 'admin'     ? 'Administrator'
                   : 'Industrial Supervisor';
-  await transporter.sendMail({
-    from: `"UENR InternTrack" <${process.env.EMAIL_USER}>`,
-    to:   email,
+  await resend.emails.send({
+    from:    'UENR InternTrack <onboarding@resend.dev>',
+    to:      email,
     subject: 'Your InternTrack Login Details – UENR',
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">

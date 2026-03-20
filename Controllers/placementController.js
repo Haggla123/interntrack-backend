@@ -2,23 +2,15 @@
 const Placement  = require('../models/Placement');
 const Company    = require('../models/Company');
 const User       = require('../models/User');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host:   'smtp.gmail.com',
-    port:   587,
-    secure: false,
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-    tls: { rejectUnauthorized: false },
-  });
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ── Email helper — credentials for industrial supervisor ────────
 const sendSupervisorCredentials = async (email, name, tempPassword, company) => {
   if (!email) return;
-  await createTransporter().sendMail({
-    from: `"UENR InternTrack" <${process.env.EMAIL_USER}>`,
-    to: email,
+  await resend.emails.send({
+    from: 'UENR InternTrack <onboarding@resend.dev>',
+    to:   email,
     subject: `InternTrack – Your Supervisor Account for ${company.name}`,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
@@ -47,12 +39,11 @@ const sendSupervisorCredentials = async (email, name, tempPassword, company) => 
   });
 };
 
-// ── Email helper: notify existing supervisor of a new intern assigned ──
 const sendNewInternNotification = async (supervisor, student, company) => {
   if (!supervisor?.email) return;
-  await createTransporter().sendMail({
-    from: `"UENR InternTrack" <${process.env.EMAIL_USER}>`,
-    to: supervisor.email,
+  await resend.emails.send({
+    from: 'UENR InternTrack <onboarding@resend.dev>',
+    to:   supervisor.email,
     subject: `InternTrack – New Intern Assigned at ${company.name}`,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">

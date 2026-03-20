@@ -1,31 +1,19 @@
 const User       = require('../models/User');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host:   'smtp.gmail.com',
-    port:   587,
-    secure: false,
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-    tls: { rejectUnauthorized: false },
-  });
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const broadcast = async (req, res) => {
   try {
     const { subject, message, targetRole = 'student' } = req.body;
-
     if (!subject?.trim() || !message?.trim()) {
       return res.status(400).json({ message: 'Subject and message body are required.' });
     }
-
     const recipients = await User.find({ role: targetRole, isActive: true }).select('name email');
     if (recipients.length === 0) {
       return res.status(404).json({ message: `No active ${targetRole} accounts found.` });
     }
-
-    const transporter = createTransporter();
     const results = { sent: 0, failed: 0, errors: [] };
-
     for (const recipient of recipients) {
       const personalised = message.replace(/\{name\}/gi, recipient.name.split(' ')[0]);
       const htmlBody = `
@@ -39,11 +27,10 @@ const broadcast = async (req, res) => {
             &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana<br/>
             This is an automated notification — please do not reply to this email.
           </footer>
-        </div>
-      `;
+        </div>`;
       try {
-        await transporter.sendMail({
-          from:    `"UENR InternTrack" <${process.env.EMAIL_USER}>`,
+        await resend.emails.send({
+          from:    'UENR InternTrack <onboarding@resend.dev>',
           to:      recipient.email,
           subject: subject.trim(),
           html:    htmlBody,
@@ -54,7 +41,6 @@ const broadcast = async (req, res) => {
         results.errors.push({ email: recipient.email, error: mailErr.message });
       }
     }
-
     const statusCode = results.sent > 0 ? 200 : 500;
     res.status(statusCode).json({
       message: `Broadcast complete. ${results.sent} sent, ${results.failed} failed.`,
