@@ -44,9 +44,7 @@ const getVisits = async (req, res) => {
       // Students can see visits scheduled for them
       filter.student = req.user._id;
     } else if (req.user.role === 'industrial') {
-      // FIX: check BOTH companyId and industrialSupervisor — same reason as
-      // getStudents fix. If supervisor.companyId is null the old query
-      // returned User.find({ companyId: null }) which found unplaced students.
+      
       const orClauses = [];
 
       if (req.user.companyId) {

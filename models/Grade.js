@@ -8,6 +8,7 @@ const GradeSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    
     // Who submitted this grade
     submittedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -24,9 +25,9 @@ const GradeSchema = new mongoose.Schema(
       enum: ['A', 'B+', 'B', 'C+', 'C', 'D', 'F'],
       required: [true, 'Grade is required'],
     },
+
     // Numeric score (0–100) used by industrial supervisors.
-    // FIX: was max:10 which matched the old Math.round(pct/10) storage.
-    // InternEvaluation now stores the raw 0–100 percentage directly.
+
     score: {
       type: Number,
       min: 0,

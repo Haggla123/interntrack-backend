@@ -1,7 +1,3 @@
-// Routes/logs.js
-// FIX: Changed ../controllers/ to ../Controllers/ (uppercase C) to match
-// the actual folder name. On Linux servers this case mismatch crashes
-// the server at startup with MODULE_NOT_FOUND.
 const express = require('express');
 const router  = express.Router();
 const { submitLog, getMyLogs, getStudentLogs, getPendingLogs, approveLog, rejectLog } = require('../Controllers/logController');

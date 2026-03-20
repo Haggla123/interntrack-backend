@@ -1,6 +1,3 @@
-// middleware/upload.js
-// FIX: This file was empty — req.file was always undefined, causing
-// every document upload to return "No file uploaded." immediately.
 const path   = require('path');
 const multer = require('multer');
 const fs     = require('fs');

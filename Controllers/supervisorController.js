@@ -72,8 +72,7 @@ const assignSupervisor = async (req, res) => {
 // ── PUT /api/supervisors/:id — admin edits a supervisor ──────────
 async function updateSupervisor(req, res) {
   try {
-    // FIX: added companyOrg so industrial supervisors' organisation name
-    // can be updated via the SupervisorsTab inline edit form.
+    
     const allowed = ['name', 'email', 'department', 'staffId', 'phone', 'companyOrg'];
     const updates = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });

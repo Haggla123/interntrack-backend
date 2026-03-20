@@ -5,16 +5,21 @@ const Grade  = require('../models/Grade');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 
+const createTransporter = () =>
+  nodemailer.createTransport({
+    host:   'smtp.gmail.com',
+    port:   587,
+    secure: false,
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    tls: { rejectUnauthorized: false },
+  });
+
 const makeTempPassword = () =>
   'UENR-' + crypto.randomBytes(6).toString('base64url').slice(0, 8);
 
 const sendPasswordResetEmail = async (email, name, tempPassword, identifier) => {
   if (!email) return;
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  });
-  await transporter.sendMail({
+  await createTransporter().sendMail({
     from:    `"UENR InternTrack" <${process.env.EMAIL_USER}>`,
     to:      email,
     subject: 'InternTrack – Your Password Has Been Reset',

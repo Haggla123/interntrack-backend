@@ -1,7 +1,4 @@
-// Routes/documents.js
-// FIX: Added upload.single('file') middleware to the POST route.
-// Without it req.file was always undefined and every upload returned
-// "No file uploaded." regardless of what the client sent.
+
 const express  = require('express');
 const router   = express.Router();
 const { uploadDocument, getDocuments, downloadDocument, deleteDocument } =

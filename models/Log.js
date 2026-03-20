@@ -1,6 +1,3 @@
-// models/Log.js
-// This is the ONE log model. LogEntry.js was a duplicate — delete it.
-// All controllers and seed.js should import from this file.
 const mongoose = require('mongoose');
 
 const LogSchema = new mongoose.Schema(

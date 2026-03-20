@@ -1,6 +1,4 @@
-// models/Settings.js
-// Single-document config — there is only ever ONE settings record.
-// Use Settings.getOrCreate() to safely read/upsert.
+
 const mongoose = require('mongoose');
 
 const SettingsSchema = new mongoose.Schema(

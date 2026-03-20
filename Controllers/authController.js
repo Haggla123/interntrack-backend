@@ -6,8 +6,11 @@ const nodemailer = require('nodemailer');
 
 const createTransporter = () =>
   nodemailer.createTransport({
-    service: 'gmail',
+    host:   'smtp.gmail.com',
+    port:   587,
+    secure: false, // TLS on port 587 (not SSL on 465)
     auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    tls: { rejectUnauthorized: false },
   });
 
 const makeTempPassword = () =>
@@ -31,7 +34,7 @@ const sendWelcomeEmail = async (email, name, tempPassword, role = 'student', ide
         <h3 style="color:#2c5282;">Hi ${name},</h3>
         <p>Welcome to <strong>InternTrack</strong>! Your account has been created. Use the credentials below to log in.</p>
         <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #3182ce;">
-          <p style="margin:5px 0;"><strong>Login ID:</strong> ${email}</p>
+          <p style="margin:5px 0;"><strong>Login ID:</strong> ${identifier || email}</p>
           <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;">${tempPassword}</span></p>
           <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
         </div>

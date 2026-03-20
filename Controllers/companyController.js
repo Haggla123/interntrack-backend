@@ -1,7 +1,3 @@
-// Controllers/companyController.js
-// FIX: applyForSlot now uses an atomic MongoDB update to prevent the race
-// condition where two concurrent requests could both read slots > 0,
-// both decrement, and oversell a slot.
 const Company    = require('../models/Company');
 const User       = require('../models/User');
 const nodemailer = require('nodemailer');
@@ -135,9 +131,6 @@ const deleteCompany = async (req, res) => {
 };
 
 // ── POST /api/companies/:id/apply ────────────────────────────────
-// FIX: Atomic findOneAndUpdate with slots > 0 condition.
-// If two requests arrive simultaneously, only one will match the
-// { slots: { $gt: 0 } } filter — the other gets a 400.
 const applyForSlot = async (req, res) => {
   try {
     const company = await Company.findOneAndUpdate(

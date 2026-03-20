@@ -61,12 +61,9 @@ const submitGrade = async (req, res) => {
       { new: true, upsert: true, runValidators: true }
     );
 
-    // FIX: Only mark the student as fully "Graded" when an academic or
+    // Only mark the student as fully "Graded" when an academic or
     // report grade is submitted. Industrial scores are intermediate inputs
     // that academic supervisors use to arrive at the final grade.
-    // Previously, any industrial submission set gradeStatus = 'Graded',
-    // making the GradingSection show those students as complete before
-    // the academic supervisor had reviewed them.
     if (gradeType === 'academic' || gradeType === 'report') {
       await User.findByIdAndUpdate(studentId, {
         gradeStatus: 'Graded',
@@ -110,7 +107,7 @@ const updateGrade = async (req, res) => {
 
     if (!record) return res.status(404).json({ message: 'Grade record not found.' });
 
-    // FIX: Same rule — only sync finalGrade for academic/report types
+    // Same rule — only sync finalGrade for academic/report types
     if (grade && (record.type === 'academic' || record.type === 'report')) {
       await User.findByIdAndUpdate(record.student, {
         finalGrade:  grade,

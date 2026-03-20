@@ -1,9 +1,3 @@
-// middleware/auth.js
-// Place this file at:  backend/middleware/auth.js
-// Exports two middleware functions used by every route file:
-//   protect   — verifies the JWT and attaches req.user
-//   authorise — restricts a route to specific roles
-
 const jwt  = require('jsonwebtoken');
 const User = require('../models/User');
 

@@ -9,7 +9,7 @@ const { protect, authorise } = require('../middleware/auth');
 
 router.get('/',                    protect, authorise('admin', 'academic', 'industrial'), getStudents);
 
-// FIX: /stats must be declared BEFORE /:id so Express doesn't treat
+// stats must be declared BEFORE /:id so Express doesn't treat
 // the literal string "stats" as a MongoDB ObjectId parameter.
 router.get('/stats',               protect, authorise('academic', 'admin'), getStudentStats);
 

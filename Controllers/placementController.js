@@ -4,14 +4,19 @@ const Company    = require('../models/Company');
 const User       = require('../models/User');
 const nodemailer = require('nodemailer');
 
+const createTransporter = () =>
+  nodemailer.createTransport({
+    host:   'smtp.gmail.com',
+    port:   587,
+    secure: false,
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    tls: { rejectUnauthorized: false },
+  });
+
 // ── Email helper — credentials for industrial supervisor ────────
 const sendSupervisorCredentials = async (email, name, tempPassword, company) => {
   if (!email) return;
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  });
-  await transporter.sendMail({
+  await createTransporter().sendMail({
     from: `"UENR InternTrack" <${process.env.EMAIL_USER}>`,
     to: email,
     subject: `InternTrack – Your Supervisor Account for ${company.name}`,
@@ -34,25 +39,18 @@ const sendSupervisorCredentials = async (email, name, tempPassword, company) => 
             Login to Supervisor Portal
           </a>
         </div>
-        <p style="font-size:0.85em;color:#718096;">
-          <strong>Security Notice:</strong> Please change this temporary password after your first login.
-        </p>
+        <p style="font-size:0.85em;color:#718096;"><strong>Security Notice:</strong> Please change this temporary password after your first login.</p>
         <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
-          &copy; 2026 UENR InternTrack System | Sunyani, Ghana
+          &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
         </footer>
       </div>`,
   });
 };
 
-// ── POST /api/placements — student submits placement request ─────
 // ── Email helper: notify existing supervisor of a new intern assigned ──
 const sendNewInternNotification = async (supervisor, student, company) => {
   if (!supervisor?.email) return;
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  });
-  await transporter.sendMail({
+  await createTransporter().sendMail({
     from: `"UENR InternTrack" <${process.env.EMAIL_USER}>`,
     to: supervisor.email,
     subject: `InternTrack – New Intern Assigned at ${company.name}`,
@@ -77,7 +75,7 @@ const sendNewInternNotification = async (supervisor, student, company) => {
           </a>
         </div>
         <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
-          &copy; 2026 UENR InternTrack System | Sunyani, Ghana
+          &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
         </footer>
       </div>`,
   });
