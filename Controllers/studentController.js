@@ -12,7 +12,7 @@ const sendEmail = async (to, subject, html) => {
     method:  'POST',
     headers: { 'Content-Type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
     body: JSON.stringify({
-      sender:      { name: 'UENR InternTrack', email: 'noreply@uenr.edu.gh' },
+      sender:      { name: 'UENR InternTrack', email: process.env.MAIL_ADDRESS },
       to:          [{ email: to }],
       subject,
       htmlContent: html,

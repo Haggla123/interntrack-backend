@@ -6,8 +6,6 @@ const User   = require('../models/User');
 const makeTempPassword = () =>
   'UENR-' + crypto.randomBytes(6).toString('base64url').slice(0, 8);
 
-// Send email via Brevo (formerly Sendinblue) HTTP API
-// Works on all cloud hosts — no SMTP, no domain verification needed
 const sendEmail = async (to, subject, html) => {
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method:  'POST',
@@ -16,8 +14,8 @@ const sendEmail = async (to, subject, html) => {
       'api-key':      process.env.BREVO_API_KEY,
     },
     body: JSON.stringify({
-      sender:   { name: 'UENR InternTrack', email: 'noreply@uenr.edu.gh' },
-      to:       [{ email: to }],
+      sender:      { name: 'UENR InternTrack', email: process.env.MAIL_ADDRESS },
+      to:          [{ email: to }],
       subject,
       htmlContent: html,
     }),
