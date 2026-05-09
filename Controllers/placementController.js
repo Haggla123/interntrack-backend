@@ -3,6 +3,8 @@ const Placement = require('../models/Placement');
 const Company   = require('../models/Company');
 const User      = require('../models/User');
 
+const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const sendEmail = async (to, subject, html) => {
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method:  'POST',
@@ -151,10 +153,23 @@ const approvePlacement = async (req, res) => {
     placement.reviewedBy = req.user._id;
     placement.reviewedAt = new Date();
 
-    // Try to find or create the Company record so students show up in the companies list
+    const supervisorEmail = (placement.supervisorEmail || '').trim().toLowerCase();
+    const existingManager = supervisorEmail
+      ? await User.findOne({
+          email: supervisorEmail,
+          role: { $in: ['company_manager', 'industrial'] },
+          isActive: true,
+        })
+      : null;
+
+    // Prefer an existing company by exact name, then any company already tied
+    // to the submitted HR/supervisor account.
     let company = await Company.findOne({
-      name: { $regex: new RegExp(`^${placement.companyName}$`, 'i') },
+      name: { $regex: new RegExp(`^${escapeRegex(placement.companyName)}$`, 'i') },
     });
+    if (!company && existingManager?.companyId) {
+      company = await Company.findById(existingManager.companyId);
+    }
 
     if (!company) {
       company = await Company.create({
@@ -164,31 +179,50 @@ const approvePlacement = async (req, res) => {
         supervisorPhone: placement.supervisorPhone,
         lat:             placement.lat,
         long:            placement.long,
+        ...(existingManager?.role === 'company_manager' ? { manager: existingManager._id } : {}),
+        ...(existingManager?.role === 'industrial' ? { supervisors: [existingManager._id] } : {}),
         slots:           10, // default — admin can edit later
       });
     } else {
       // Update supervisor contact details if placement has them (keeps company record fresh)
-      const updates = {};
-      if (placement.supervisorName)  updates.supervisorName  = placement.supervisorName;
-      if (placement.supervisorEmail) updates.supervisorEmail = placement.supervisorEmail;
-      if (placement.supervisorPhone) updates.supervisorPhone = placement.supervisorPhone;
-      if (placement.lat)  updates.lat  = placement.lat;
-      if (placement.long) updates.long = placement.long;
-      if (Object.keys(updates).length) {
-        company = await Company.findByIdAndUpdate(company._id, updates, { new: true });
+      const setUpdates = {};
+      const updateOps = {};
+      if (placement.supervisorName)  setUpdates.supervisorName  = placement.supervisorName;
+      if (placement.supervisorEmail) setUpdates.supervisorEmail = placement.supervisorEmail;
+      if (placement.supervisorPhone) setUpdates.supervisorPhone = placement.supervisorPhone;
+      if (placement.lat)  setUpdates.lat  = placement.lat;
+      if (placement.long) setUpdates.long = placement.long;
+      if (existingManager?.role === 'company_manager' && !company.manager) {
+        setUpdates.manager = existingManager._id;
       }
+      if (
+        existingManager?.role === 'industrial' &&
+        !(company.supervisors || []).some(id => id.toString() === existingManager._id.toString())
+      ) {
+        updateOps.$addToSet = { supervisors: existingManager._id };
+      }
+      if (Object.keys(setUpdates).length) updateOps.$set = setUpdates;
+      if (Object.keys(updateOps).length) {
+        company = await Company.findByIdAndUpdate(company._id, updateOps, { new: true });
+      }
+    }
+
+    if (existingManager && (!existingManager.companyId || existingManager.companyId.toString() !== company._id.toString())) {
+      existingManager.companyId = company._id;
+      existingManager.companyOrg = company.name;
+      await existingManager.save({ validateBeforeSave: false });
     }
 
     placement.company = company._id;
     await placement.save();
 
-    // Stamp the student record: placed at this company, but unassigned to a supervisor.
-    // The Company Manager will handle specific industrial supervisor assignments.
+    // Managers handle assignment for large companies; direct industrial contacts
+    // are linked to the student immediately.
     await User.findByIdAndUpdate(placement.student._id, {
       companyName:          company.name,
       companyId:            company._id,
       placementStatus:      'Active',
-      industrialSupervisor: null,
+      industrialSupervisor: existingManager?.role === 'industrial' ? existingManager._id : null,
     });
 
     res.status(200).json({
