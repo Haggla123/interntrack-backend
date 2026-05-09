@@ -8,20 +8,17 @@ const { protect, authorise } = require('../middleware/auth');
 
 router.use(protect);
 
-// Academic / industrial: submit a grade
-router.post('/', authorise('academic', 'industrial'), submitGrade);
+// Academic / industrial / manager: submit a grade
+router.post('/', authorise('academic', 'industrial', 'company_manager'), submitGrade);
 
-// Academic / industrial: update an existing grade record
-router.put('/:id', authorise('academic', 'industrial'), updateGrade);
+// Academic / industrial / manager: update an existing grade record
+router.put('/:id', authorise('academic', 'industrial', 'company_manager'), updateGrade);
 
 // GET /grades/mine — returns all grades submitted by the current user.
-// Industrial supervisors use this on mount to build the evaluated/not-evaluated
-// split without making N individual getStudentGrade calls.
-// MUST be declared before /:id so Express doesn't treat "mine" as an ObjectId.
-router.get('/mine', authorise('academic', 'industrial'), getMyGrades);
+router.get('/mine', authorise('academic', 'industrial', 'company_manager'), getMyGrades);
 
 // GET /grades/student/:studentId — full grade history for one student
-router.get('/student/:studentId', authorise('academic', 'industrial', 'admin'), getStudentGrade);
+router.get('/student/:studentId', authorise('academic', 'industrial', 'company_manager', 'admin'), getStudentGrade);
 
 // Admin: full grade registry
 router.get('/', authorise('admin'), getAllGrades);

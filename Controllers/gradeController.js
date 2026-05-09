@@ -1,6 +1,7 @@
 // Controllers/gradeController.js
 const Grade = require('../models/Grade');
 const User  = require('../models/User');
+const { canAccessStudent, requireStudentAccess } = require('../utils/accessControl');
 
 // ── POST /api/grades ─────────────────────────────────────────────
 const submitGrade = async (req, res) => {
@@ -18,6 +19,9 @@ const submitGrade = async (req, res) => {
 
     const student = await User.findById(studentId);
     if (!student) return res.status(404).json({ message: 'Student not found.' });
+    if (!canAccessStudent(req.user, student)) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
 
     const gradeType = type || (req.user.role === 'industrial' ? 'industrial' : 'academic');
 
@@ -87,25 +91,25 @@ const updateGrade = async (req, res) => {
       safetyAdherence, workIndependently,
     } = req.body;
 
-    const record = await Grade.findByIdAndUpdate(
-      req.params.id,
-      {
-        ...(grade               !== undefined && { grade }),
-        ...(score               !== undefined && { score }),
-        ...(comments            !== undefined && { comments }),
-        ...(attendance          !== undefined && { attendance }),
-        ...(punctuality         !== undefined && { punctuality }),
-        ...(cooperation         !== undefined && { cooperation }),
-        ...(aptitudeForLearning !== undefined && { aptitudeForLearning }),
-        ...(understandingOfJob  !== undefined && { understandingOfJob }),
-        ...(safetyAdherence     !== undefined && { safetyAdherence }),
-        ...(workIndependently   !== undefined && { workIndependently }),
-        submittedBy: req.user._id,
-      },
-      { new: true, runValidators: true }
-    );
-
+    const record = await Grade.findById(req.params.id)
+      .populate('student', '_id role academicSupervisor industrialSupervisor companyId');
     if (!record) return res.status(404).json({ message: 'Grade record not found.' });
+    if (!canAccessStudent(req.user, record.student)) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    if (grade               !== undefined) record.grade = grade;
+    if (score               !== undefined) record.score = score;
+    if (comments            !== undefined) record.comments = comments;
+    if (attendance          !== undefined) record.attendance = attendance;
+    if (punctuality         !== undefined) record.punctuality = punctuality;
+    if (cooperation         !== undefined) record.cooperation = cooperation;
+    if (aptitudeForLearning !== undefined) record.aptitudeForLearning = aptitudeForLearning;
+    if (understandingOfJob  !== undefined) record.understandingOfJob = understandingOfJob;
+    if (safetyAdherence     !== undefined) record.safetyAdherence = safetyAdherence;
+    if (workIndependently   !== undefined) record.workIndependently = workIndependently;
+    record.submittedBy = req.user._id;
+    await record.save();
 
     // Same rule — only sync finalGrade for academic/report types
     if (grade && (record.type === 'academic' || record.type === 'report')) {
@@ -139,6 +143,9 @@ const getMyGrades = async (req, res) => {
 // ── GET /api/grades/student/:studentId ───────────────────────────
 const getStudentGrade = async (req, res) => {
   try {
+    const student = await requireStudentAccess(req, res, req.params.studentId);
+    if (!student) return;
+
     const grades = await Grade.find({ student: req.params.studentId })
       .populate('submittedBy', 'name role')
       .sort({ updatedAt: -1 });

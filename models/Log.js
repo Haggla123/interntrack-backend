@@ -20,10 +20,22 @@ const LogSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // ── New: checkbox-based activities ────────────────────────────
+    // Array of activity-category keys selected by the student
+    activities: {
+      type: [String],
+      default: [],
+    },
+    // Optional short note for additional context
+    notes: {
+      type: String,
+      default: '',
+      maxlength: [300, 'Notes cannot exceed 300 characters'],
+    },
+    // ── Legacy: free-text activity (kept for backward compat) ───
     activity: {
       type: String,
-      required: [true, 'Activity description is required'],
-      minlength: [20, 'Please write at least 20 characters'],
+      default: '',
     },
     skills: {
       type: String,

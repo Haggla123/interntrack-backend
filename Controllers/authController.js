@@ -27,9 +27,10 @@ const sendEmail = async (to, subject, html) => {
 };
 
 const sendWelcomeEmail = async (email, name, tempPassword, role = 'student', identifier = '') => {
-  const roleLabel = role === 'student'   ? 'Student'
-                  : role === 'academic'  ? 'Academic Supervisor'
-                  : role === 'admin'     ? 'Administrator'
+  const roleLabel = role === 'student'          ? 'Student'
+                  : role === 'academic'         ? 'Academic Supervisor'
+                  : role === 'admin'            ? 'Administrator'
+                  : role === 'company_manager'  ? 'Company Manager'
                   : 'Industrial Supervisor';
   await sendEmail(
     email,
@@ -82,6 +83,7 @@ const sendToken = (user, statusCode, res) => {
       companyName:         user.companyName,
       academicSupervisor:  user.academicSupervisor,
       companyOrg:          user.companyOrg,
+      profilePicture:      user.profilePicture,
     },
   });
 };
@@ -220,10 +222,13 @@ const login = async (req, res) => {
     }
 
     if (req.body.role) {
-      const submitted = req.body.role === 'industry' ? 'industrial' : req.body.role;
-      if (submitted !== user.role) {
+      let submitted = req.body.role === 'industry' ? 'industrial' : req.body.role;
+      // Allow company_manager users to log in via the 'industrial' tab
+      const isCompatible = submitted === user.role
+        || (submitted === 'industrial' && user.role === 'company_manager');
+      if (!isCompatible) {
         return res.status(403).json({
-          message: `Incorrect portal selected. Please choose the ${user.role.charAt(0).toUpperCase() + user.role.slice(1)} portal to sign in.`,
+          message: `Incorrect portal selected. Please choose the ${user.role === 'company_manager' ? 'Industry' : user.role.charAt(0).toUpperCase() + user.role.slice(1)} portal to sign in.`,
         });
       }
     }
@@ -243,11 +248,15 @@ const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
       .select('-password')
-      .populate('academicSupervisor',   'name email phone department staffId')
+      .populate('academicSupervisor',   'name email phone department staffId profilePicture')
       // FIX: industrialSupervisor was not populated so student dashboard
       // could never show the industrial supervisor's name/contact details.
-      .populate('industrialSupervisor', 'name email phone companyOrg')
-      .populate('companyId', 'name location category supervisorName supervisorEmail supervisorPhone lat long radius');
+      .populate('industrialSupervisor', 'name email phone companyOrg profilePicture')
+      .populate({
+        path: 'companyId',
+        select: 'name location category supervisorName supervisorEmail supervisorPhone lat long radius manager',
+        populate: { path: 'manager', select: 'name email phone companyOrg profilePicture' },
+      });
     if (!user) return res.status(404).json({ message: 'User not found.' });
     res.status(200).json({ user });
   } catch (err) {
@@ -307,4 +316,66 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, changePassword, forgotPassword };
+// ── PATCH /api/auth/me  (update own profile) ────────────────────
+const updateProfile = async (req, res) => {
+  try {
+    // Students may only update: name, email, phone, department
+    // (indexNumber is immutable — assigned by admin)
+    const allowed = ['name', 'email', 'phone', 'department'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: 'No valid fields provided for update.' });
+    }
+
+    // Prevent email collisions
+    if (updates.email) {
+      const exists = await User.findOne({ email: updates.email, _id: { $ne: req.user._id } });
+      if (exists) return res.status(400).json({ message: 'This email is already in use by another account.' });
+    }
+
+    const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true, runValidators: true })
+      .select('-password')
+      .populate('academicSupervisor',   'name email phone department staffId profilePicture')
+      .populate('industrialSupervisor', 'name email phone companyOrg profilePicture')
+      .populate({
+        path: 'companyId',
+        select: 'name location category supervisorName supervisorEmail supervisorPhone lat long radius manager',
+        populate: { path: 'manager', select: 'name email phone companyOrg profilePicture' },
+      });
+
+    res.status(200).json({ message: 'Profile updated.', user });
+  } catch (err) {
+    if (err.code === 11000 || err.code === '11000') {
+      return res.status(400).json({ message: 'A user with these details already exists.' });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ── POST /api/auth/me/avatar  (upload profile picture) ─────────
+const uploadAvatar = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No image file provided.' });
+
+    // Store the relative path: avatars/<filename>
+    const avatarPath = `avatars/${req.file.filename}`;
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { profilePicture: avatarPath },
+      { new: true }
+    ).select('-password');
+
+    res.status(200).json({
+      message: 'Profile picture updated.',
+      profilePicture: avatarPath,
+      user,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { register, login, getMe, changePassword, forgotPassword, updateProfile, uploadAvatar };

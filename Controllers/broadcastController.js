@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 
 const sendEmail = async (to, subject, html) => {
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -30,6 +31,11 @@ const broadcast = async (req, res) => {
     const results = { sent: 0, failed: 0, errors: [] };
     for (const recipient of recipients) {
       const personalised = message.replace(/\{name\}/gi, recipient.name.split(' ')[0]);
+      await Notification.create({
+        recipient: recipient._id,
+        subject: subject.trim(),
+        message: personalised.trim(),
+      });
       const htmlBody = `
         <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
           <h2 style="color:#2c5282;margin-bottom:4px;">University of Energy and Natural Resources</h2>

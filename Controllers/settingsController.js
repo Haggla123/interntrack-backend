@@ -20,7 +20,7 @@ const updateSettings = async (req, res) => {
       'weightIndustrial', 'weightAcademic', 'weightLogbook',
       'geofenceEnabled', 'geofenceRadius', 'attendanceMode', 'strictTimeWindow',
       'allowSelfPlacement', 'industrialPortalEnabled',
-      'departments',
+      'departments', 'activityCategories',
     ];
 
     const updates = {};

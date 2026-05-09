@@ -3,6 +3,7 @@ const User   = require('../models/User');
 const Log    = require('../models/Log');
 const Grade  = require('../models/Grade');
 const crypto = require('crypto');
+const { canAccessStudent } = require('../utils/accessControl');
 
 const makeTempPassword = () =>
   'UENR-' + crypto.randomBytes(6).toString('base64url').slice(0, 8);
@@ -57,20 +58,21 @@ const getStudents = async (req, res) => {
       filter.academicSupervisor = req.user._id;
 
     } else if (req.user.role === 'industrial') {
-      // Use $or: student visible if companyId matches OR industrialSupervisor matches.
-      // Previously only companyId was checked — if supervisor.companyId was null
-      // (common with partial seed or manual account creation) no students were returned.
-      const orConditions = [];
+      // Industrial supervisors only see students explicitly assigned to them
+      filter.industrialSupervisor = req.user._id;
+
+    } else if (req.user.role === 'company_manager') {
+      // Company managers see all students placed at their company
       if (req.user.companyId) {
-        orConditions.push({ companyId: req.user.companyId });
+        filter.companyId = req.user.companyId;
+      } else {
+        return res.status(200).json({ success: true, data: [] });
       }
-      orConditions.push({ industrialSupervisor: req.user._id });
-      filter.$or = orConditions;
     }
 
     const students = await User.find(filter)
       .select('-password')
-      .populate('academicSupervisor', 'name email department staffId')
+      .populate('academicSupervisor', 'name email department staffId profilePicture')
       .populate('companyId', 'name location category lat long radius supervisorName supervisorEmail supervisorPhone')
       .sort({ createdAt: -1 });
 
@@ -160,10 +162,13 @@ const getStudent = async (req, res) => {
   try {
     const student = await User.findOne({ _id: req.params.id, role: 'student' })
       .select('-password')
-      .populate('academicSupervisor', 'name email department staffId')
+      .populate('academicSupervisor', 'name email department staffId profilePicture')
       .populate('companyId', 'name location category lat long radius supervisorName supervisorEmail supervisorPhone');
 
     if (!student) return res.status(404).json({ message: 'Student not found.' });
+    if (!canAccessStudent(req.user, student)) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
     res.status(200).json({ success: true, data: student });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -223,7 +228,7 @@ const assignStudent = async (req, res) => {
       req.params.id, updates, { new: true, runValidators: true }
     ).select('-password')
      .populate('academicSupervisor',  'name email department staffId')
-     .populate('industrialSupervisor','name email companyOrg')
+     .populate('industrialSupervisor','name email companyOrg profilePicture')
      .populate('companyId', 'name location category lat long radius supervisorName supervisorEmail supervisorPhone');
 
     if (!student) return res.status(404).json({ message: 'Student not found.' });

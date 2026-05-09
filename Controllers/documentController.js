@@ -3,6 +3,7 @@ const path     = require('path');
 const fs       = require('fs');
 const Document = require('../models/Document');
 const User     = require('../models/User');
+const { requireStudentAccess } = require('../utils/accessControl');
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 
@@ -95,6 +96,15 @@ const getDocuments = async (req, res) => {
       }).select('_id');
       filter.student  = { $in: myStudents.map(s => s._id) };
       filter.isPublic = { $ne: true };
+    } else if (req.user.role === 'company_manager') {
+      if (!req.user.companyId) {
+        return res.status(200).json({ success: true, data: [] });
+      }
+      const myStudents = await User.find({
+        companyId: req.user.companyId, role: 'student', isActive: true,
+      }).select('_id');
+      filter.student = { $in: myStudents.map(s => s._id) };
+      filter.isPublic = { $ne: true };
     }
 
     if (req.query.type) filter.type = req.query.type;
@@ -116,13 +126,9 @@ const downloadDocument = async (req, res) => {
     const doc = await Document.findById(req.params.id);
     if (!doc) return res.status(404).json({ message: 'Document not found.' });
 
-    // Students can only download their own docs or public docs
-    if (
-      req.user.role === 'student' &&
-      !doc.isPublic &&
-      doc.student?.toString() !== req.user._id.toString()
-    ) {
-      return res.status(403).json({ message: 'Access denied.' });
+    if (!doc.isPublic) {
+      const student = await requireStudentAccess(req, res, doc.student);
+      if (!student) return;
     }
 
     const filePath = path.join(UPLOAD_DIR, doc.storedName);

@@ -182,56 +182,13 @@ const approvePlacement = async (req, res) => {
     placement.company = company._id;
     await placement.save();
 
-    // Find or create industrial supervisor account, then link student to them
-    let supervisorUser = null;
-    if (placement.supervisorEmail) {
-      supervisorUser = await User.findOne({ email: placement.supervisorEmail, role: 'industrial' });
-
-      let emailSent = false;
-      let emailNote  = '';
-
-      if (!supervisorUser) {
-        // First student from this company — create account and send credentials
-        const tempPassword = `UENR-${Math.floor(1000 + Math.random() * 9000)}`;
-        supervisorUser = await User.create({
-          name:                placement.supervisorName || placement.supervisorEmail,
-          email:               placement.supervisorEmail,
-          password:            tempPassword,
-          role:                'industrial',
-          companyOrg:          company.name,
-          companyId:           company._id,
-          needsPasswordChange: true,
-        });
-        try {
-          await sendSupervisorCredentials(placement.supervisorEmail, placement.supervisorName, tempPassword, company);
-          emailSent = true;
-          emailNote  = `Credentials emailed to ${placement.supervisorEmail}.`;
-        } catch (mailErr) {
-          console.error('Supervisor credentials email failed:', mailErr.message);
-          emailNote = `Account created but email failed — share credentials manually. Temp password: UENR-${tempPassword.split('-')[1]}`;
-        }
-      } else {
-        // Supervisor already has an account — notify them of the new intern
-        try {
-          await sendNewInternNotification(supervisorUser, placement.student, company);
-          emailSent = true;
-          emailNote  = `Notification sent to existing supervisor (${placement.supervisorEmail}).`;
-        } catch (mailErr) {
-          console.error('New intern notification email failed:', mailErr.message);
-          emailNote = `Supervisor account linked but notification email failed.`;
-        }
-      }
-
-      placement._emailSent = emailSent;
-      placement._emailNote  = emailNote;
-    }
-
-    // Stamp the student record: placed at this company, linked to this industrial supervisor
+    // Stamp the student record: placed at this company, but unassigned to a supervisor.
+    // The Company Manager will handle specific industrial supervisor assignments.
     await User.findByIdAndUpdate(placement.student._id, {
       companyName:          company.name,
       companyId:            company._id,
       placementStatus:      'Active',
-      ...(supervisorUser && { industrialSupervisor: supervisorUser._id }),
+      industrialSupervisor: null,
     });
 
     res.status(200).json({

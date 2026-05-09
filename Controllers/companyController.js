@@ -12,13 +12,14 @@ const sendSupervisorCredentials = async (email, name, tempPassword, company) => 
   await transporter.sendMail({
     from: `"UENR InternTrack" <${process.env.EMAIL_USER}>`,
     to: email,
-    subject: `InternTrack – Your Supervisor Account for ${company.name}`,
+    subject: `InternTrack – Your Company Manager Account for ${company.name}`,
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
         <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
         <hr style="border:0;border-top:1px solid #eee;" />
-        <h3 style="color:#2c5282;">Hi ${name || 'Supervisor'},</h3>
-        <p><strong>${company.name}</strong> has been registered on UENR InternTrack. Your supervisor account has been created.</p>
+        <h3 style="color:#2c5282;">Hi ${name || 'Manager'},</h3>
+        <p><strong>${company.name}</strong> has been registered on UENR InternTrack. Your Company Manager account has been created.</p>
+        <p>As a manager, you can log in to assign students to supervisors and monitor logbook activity.</p>
         <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #3182ce;">
           <p style="margin:5px 0;"><strong>Login Email:</strong> ${email}</p>
           <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;">${tempPassword}</span></p>
@@ -73,19 +74,28 @@ const createCompany = async (req, res) => {
 
     let emailWarning = null;
     if (supervisorEmail) {
-      const existing = await User.findOne({ email: supervisorEmail, role: 'industrial' });
+      const existing = await User.findOne({ email: supervisorEmail });
       if (!existing) {
         const tempPassword = require('crypto').randomBytes(6).toString('base64url').slice(0, 8);
-        await User.create({
-          name: supervisorName || supervisorEmail, email: supervisorEmail,
-          password: 'UENR-' + tempPassword, role: 'industrial',
-          companyOrg: name, companyId: company._id, needsPasswordChange: true,
+        const managerUser = await User.create({
+          name: supervisorName || supervisorEmail, 
+          email: supervisorEmail,
+          password: 'UENR-' + tempPassword, 
+          role: 'company_manager',
+          companyOrg: name, 
+          companyId: company._id, 
+          needsPasswordChange: true,
         });
+
+        // Link company to manager
+        company.manager = managerUser._id;
+        await company.save();
+
         try {
           await sendSupervisorCredentials(supervisorEmail, supervisorName, 'UENR-' + tempPassword, company);
         } catch (mailErr) {
-          console.error('Supervisor credentials email failed:', mailErr.message);
-          emailWarning = 'Company created and account set up, but the credentials email could not be sent.';
+          console.error('Manager credentials email failed:', mailErr.message);
+          emailWarning = 'Company created and manager account set up, but the credentials email could not be sent.';
         }
       }
     }

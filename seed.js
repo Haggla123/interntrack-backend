@@ -13,6 +13,7 @@ const Company   = require('./models/Company');
 const Placement = require('./models/Placement');   // FIX: was PlacementRequest
 const Log       = require('./models/Log');          // FIX: was LogEntry
 const Grade     = require('./models/Grade');
+const Notification = require('./models/Notification');
 
 const seed = async () => {
   await connectDB();
@@ -23,6 +24,7 @@ const seed = async () => {
   await Placement.deleteMany({});
   await Log.deleteMany({});
   await Grade.deleteMany({});
+  await Notification.deleteMany({});
 
   // ── Companies ────────────────────────────────────────────────
   console.log('🏢  Seeding companies...');
@@ -46,16 +48,29 @@ const seed = async () => {
     { name:'Dr. K. Amoah',    email:'amoah@uenr.edu.gh',    password:'Lecturer1234!', role:'academic', staffId:'UENR-LEC-002', department:'ITDS',             needsPasswordChange:false },
   ]);
 
+  // ── Company Managers ─────────────────────────────────────────
+  console.log('👔  Seeding company managers...');
+  const [mtnManager, ecgManager] = await User.create([
+    { name:'MTN HR Manager', email:'manager@mtn.com.gh', password:'Manager1234!', role:'company_manager', companyId:mtn._id, companyOrg:'MTN Ghana', needsPasswordChange:false },
+    { name:'ECG HR Manager', email:'manager@ecg.com.gh', password:'Manager1234!', role:'company_manager', companyId:ecg._id, companyOrg:'Electricity Company of Ghana', needsPasswordChange:false },
+  ]);
+
+  // Link companies to their managers
+  mtn.manager = mtnManager._id;
+  ecg.manager = ecgManager._id;
+  await Promise.all([mtn.save(), ecg.save()]);
+
   // ── Industrial Supervisors ───────────────────────────────────
   console.log('🏭  Seeding industrial supervisors...');
-  // FIX: companyId is now set inline in User.create() rather than in a
-  // separate findByIdAndUpdate() call. The two-step approach meant that if
-  // the update failed (e.g. during a partial seed) the supervisor had
-  // companyId:null and could never see any students.
   const [mtnSup, ecgSup] = await User.create([
     { name:'Mr. Kofi Boateng', email:'k.boateng@mtn.com',  password:'Supervisor1234!', role:'industrial', companyOrg:'MTN Ghana',                    companyId:mtn._id, needsPasswordChange:false },
     { name:'Eng. Ama Sarpong', email:'a.sarpong@ecg.com',  password:'Supervisor1234!', role:'industrial', companyOrg:'Electricity Company of Ghana', companyId:ecg._id, needsPasswordChange:false },
   ]);
+
+  // Add supervisors to companies
+  mtn.supervisors.push(mtnSup._id);
+  ecg.supervisors.push(ecgSup._id);
+  await Promise.all([mtn.save(), ecg.save()]);
 
   // ── Students ─────────────────────────────────────────────────
   console.log('🧑‍🎓  Seeding students...');
@@ -66,13 +81,31 @@ const seed = async () => {
     { name:'Adwoa Darko',   email:'adwoa@st.uenr.edu.gh', password:'Student1234!', role:'student', indexNumber:'UEB3214525', department:'Mechanical Engineering', status:'Pending', needsPasswordChange:false },
   ]);
 
-  // ── Logs (using Log model, not LogEntry) ─────────────────────
+  // ── Logs (checkbox-based activity model) ────────────────────────
   console.log('📓  Seeding log entries...');
-  // FIX: Log model uses: student, company, companyName, date, activity, skills, week, status
+  // Uses: student, company, companyName, date, activities (array of keys), notes, week, status
   await Log.create([
-    { student:kwame._id, company:mtn._id, companyName:'MTN Ghana', week:4, date:new Date('2025-02-23'), activity:'Implemented JWT authentication middleware and tested all login routes via Postman. Resolved token expiry bug.', skills:'Node.js, JWT, Backend Security', status:'Approved' },
-    { student:kwame._id, company:mtn._id, companyName:'MTN Ghana', week:4, date:new Date('2025-02-24'), activity:'Optimised MongoDB schema for log collection. Added compound indexes to speed up weekly queries by 60%.', skills:'MongoDB, Database Design', status:'Pending' },
-    { student:abena._id, company:mtn._id, companyName:'MTN Ghana', week:3, date:new Date('2025-02-16'), activity:'Built responsive dashboard UI with Tailwind CSS. Presented mockup to team lead and incorporated feedback.', skills:'React, Tailwind CSS, UI Design', status:'Pending' },
+    {
+      student:kwame._id, company:mtn._id, companyName:'MTN Ghana',
+      week:4, date:new Date('2025-02-23'),
+      activities: ['coding', 'testing', 'meetings'],
+      notes: 'Implemented authentication middleware and resolved a token expiry bug.',
+      status: 'Approved',
+    },
+    {
+      student:kwame._id, company:mtn._id, companyName:'MTN Ghana',
+      week:4, date:new Date('2025-02-24'),
+      activities: ['database', 'report_writing'],
+      notes: 'Optimised MongoDB schema and added compound indexes.',
+      status: 'Pending',
+    },
+    {
+      student:abena._id, company:mtn._id, companyName:'MTN Ghana',
+      week:3, date:new Date('2025-02-16'),
+      activities: ['coding', 'team_meeting', 'mentorship'],
+      notes: 'Built responsive dashboard UI and presented mockup to team lead.',
+      status: 'Pending',
+    },
   ]);
 
   // ── Placement Request (using Placement model) ─────────────────
@@ -108,6 +141,8 @@ const seed = async () => {
   console.log('  Admin       admin@uenr.edu.gh       Admin1234!');
   console.log('  Lecturer 1  frimpong@uenr.edu.gh    Lecturer1234!');
   console.log('  Lecturer 2  amoah@uenr.edu.gh       Lecturer1234!');
+  console.log('  Manager MTN manager@mtn.com.gh      Manager1234!');
+  console.log('  Manager ECG manager@ecg.com.gh      Manager1234!');
   console.log('  Industrial  k.boateng@mtn.com        Supervisor1234!');
   console.log('  Student 1   kwame@st.uenr.edu.gh    Student1234!  (Placed @ MTN)');
   console.log('  Student 2   abena@st.uenr.edu.gh    Student1234!  (Placed @ MTN)');

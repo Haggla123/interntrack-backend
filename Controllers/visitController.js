@@ -1,6 +1,7 @@
 // Controllers/visitController.js
 const Visit = require('../models/Visit');
 const User  = require('../models/User');
+const { canAccessStudent } = require('../utils/accessControl');
 
 // ── POST /api/visits — academic supervisor schedules a visit ─────
 const scheduleVisit = async (req, res) => {
@@ -12,6 +13,9 @@ const scheduleVisit = async (req, res) => {
 
     const student = await User.findById(studentId).populate('companyId', 'name location');
     if (!student) return res.status(404).json({ message: 'Student not found.' });
+    if (!canAccessStudent(req.user, student)) {
+      return res.status(403).json({ message: 'You can only schedule visits for students assigned to you.' });
+    }
 
     const visit = await Visit.create({
       supervisor:  req.user._id,
@@ -43,6 +47,12 @@ const getVisits = async (req, res) => {
     } else if (req.user.role === 'student') {
       // Students can see visits scheduled for them
       filter.student = req.user._id;
+    } else if (req.user.role === 'company_manager') {
+      if (!req.user.companyId) return res.status(200).json({ success: true, data: [] });
+      const companyStudents = await User.find({
+        companyId: req.user.companyId, role: 'student', isActive: true,
+      }).select('_id');
+      filter.student = { $in: companyStudents.map(s => s._id) };
     } else if (req.user.role === 'industrial') {
       
       const orClauses = [];
