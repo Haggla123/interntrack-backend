@@ -291,24 +291,34 @@ const changePassword = async (req, res) => {
 // ── POST /api/auth/forgot-password  (public) ────────────────────
 const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, role } = req.body;
     if (!email) return res.status(400).json({ message: 'Email address is required.' });
 
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(200).json({ message: 'If that email is registered, a reset link has been sent.' });
     }
+    if (role) {
+      const submitted = role === 'industry' ? 'industrial' : role;
+      const isCompatible = submitted === user.role
+        || (submitted === 'industrial' && user.role === 'company_manager');
+      if (!isCompatible) {
+        return res.status(200).json({ message: 'If that email is registered for this portal, recovery instructions have been sent.' });
+      }
+    }
 
     const tempPassword = makeTempPassword();
-    user.password            = tempPassword;
-    user.needsPasswordChange = true;
-    await user.save();
 
     try {
       await sendWelcomeEmail(email, user.name, tempPassword, user.role, user.indexNumber || user.staffId || email);
     } catch (mailErr) {
       console.error('Forgot-password mail error:', mailErr.message);
+      return res.status(502).json({ message: 'Recovery email could not be sent. Please try again later or contact support.' });
     }
+
+    user.password            = tempPassword;
+    user.needsPasswordChange = true;
+    await user.save();
 
     res.status(200).json({ message: 'Password reset. Check your email for the temporary password.' });
   } catch (err) {
