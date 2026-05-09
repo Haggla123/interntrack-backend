@@ -2,6 +2,7 @@
 const User   = require('../models/User');
 const Log    = require('../models/Log');
 const Grade  = require('../models/Grade');
+const Company = require('../models/Company');
 const crypto = require('crypto');
 const { canAccessStudent } = require('../utils/accessControl');
 
@@ -273,6 +274,9 @@ const resetStudentPassword = async (req, res) => {
 // ── PUT /api/students/:id/revoke ─────────────────────────────────
 const revokePlacement = async (req, res) => {
   try {
+    const existing = await User.findOne({ _id: req.params.id, role: 'student' })
+      .select('companyId placementStatus');
+
     const student = await User.findByIdAndUpdate(
       req.params.id,
       {
@@ -284,6 +288,9 @@ const revokePlacement = async (req, res) => {
     ).select('-password');
 
     if (!student) return res.status(404).json({ message: 'Student not found.' });
+    if (existing?.placementStatus === 'Active' && existing.companyId) {
+      await Company.findByIdAndUpdate(existing.companyId, { $inc: { slots: 1 } });
+    }
     res.status(200).json({ success: true, data: student });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -312,8 +319,12 @@ const deleteStudent = async (req, res) => {
   try {
     const student = await User.findOne({ _id: req.params.id, role: 'student' });
     if (!student) return res.status(404).json({ message: 'Student not found.' });
+    const shouldRestoreSlot = student.isActive && student.placementStatus === 'Active' && student.companyId;
     student.isActive = false;
     await student.save();
+    if (shouldRestoreSlot) {
+      await Company.findByIdAndUpdate(student.companyId, { $inc: { slots: 1 } });
+    }
     res.status(200).json({ success: true, message: `${student.name} has been deactivated.` });
   } catch (err) {
     res.status(500).json({ message: err.message });

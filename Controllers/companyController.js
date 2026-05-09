@@ -143,6 +143,11 @@ const deleteCompany = async (req, res) => {
 // ── POST /api/companies/:id/apply ────────────────────────────────
 const applyForSlot = async (req, res) => {
   try {
+    const student = await User.findById(req.user._id).select('placementStatus');
+    if (student?.placementStatus === 'Active') {
+      return res.status(400).json({ message: 'You are already placed at a company.' });
+    }
+
     const company = await Company.findOneAndUpdate(
       { _id: req.params.id, isActive: true, slots: { $gt: 0 } },
       { $inc: { slots: -1 } },
