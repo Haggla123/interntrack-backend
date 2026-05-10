@@ -74,6 +74,7 @@ const getStudents = async (req, res) => {
     const students = await User.find(filter)
       .select('-password')
       .populate('academicSupervisor', 'name email department staffId profilePicture')
+      .populate('industrialSupervisor', 'name email phone companyOrg profilePicture')
       .populate('companyId', 'name location category lat long radius supervisorName supervisorEmail supervisorPhone')
       .sort({ createdAt: -1 });
 
@@ -164,6 +165,7 @@ const getStudent = async (req, res) => {
     const student = await User.findOne({ _id: req.params.id, role: 'student' })
       .select('-password')
       .populate('academicSupervisor', 'name email department staffId profilePicture')
+      .populate('industrialSupervisor', 'name email phone companyOrg profilePicture')
       .populate('companyId', 'name location category lat long radius supervisorName supervisorEmail supervisorPhone');
 
     if (!student) return res.status(404).json({ message: 'Student not found.' });

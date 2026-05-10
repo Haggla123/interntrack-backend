@@ -264,6 +264,14 @@ const deleteSupervisor = async (req, res) => {
 
     // Deactivate the user account (standard practice instead of full delete)
     await User.findByIdAndUpdate(req.params.id, { isActive: false, companyId: null });
+    await User.updateMany(
+      {
+        role: 'student',
+        companyId: company._id,
+        industrialSupervisor: req.params.id,
+      },
+      { $set: { industrialSupervisor: null } }
+    );
 
     res.status(200).json({ success: true, message: 'Supervisor removed from company.' });
   } catch (err) {

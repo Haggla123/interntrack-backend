@@ -27,14 +27,11 @@ const submitGrade = async (req, res) => {
 
     // ── Ownership checks ─────────────────────────────────────────
     if (req.user.role === 'industrial') {
-      // Industrial supervisor may only grade students at their company
-      const sameCompany = student.companyId &&
-        req.user.companyId &&
-        student.companyId.toString() === req.user.companyId.toString();
+      // Industrial supervisor may only grade students explicitly assigned to them.
       const directLink  = student.industrialSupervisor &&
         student.industrialSupervisor.toString() === req.user._id.toString();
-      if (!sameCompany && !directLink) {
-        return res.status(403).json({ message: 'You can only evaluate students at your company.' });
+      if (!directLink) {
+        return res.status(403).json({ message: 'You can only evaluate students assigned to you.' });
       }
     } else if (req.user.role === 'academic') {
       // Academic supervisor may only grade students assigned to them

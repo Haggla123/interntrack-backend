@@ -20,5 +20,6 @@ router.post('/departments', authorise('admin'), addDepartment);
 
 // DELETE /api/settings/departments — admin only
 router.delete('/departments', authorise('admin'), removeDepartment);
+router.delete('/departments/:name', authorise('admin'), removeDepartment);
 
 module.exports = router;

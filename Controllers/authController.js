@@ -309,17 +309,28 @@ const forgotPassword = async (req, res) => {
     }
 
     const tempPassword = makeTempPassword();
+    const previousPassword = user.password;
+    const previousNeedsPasswordChange = user.needsPasswordChange;
+
+    user.password            = tempPassword;
+    user.needsPasswordChange = true;
+    await user.save();
 
     try {
       await sendWelcomeEmail(email, user.name, tempPassword, user.role, user.indexNumber || user.staffId || email);
     } catch (mailErr) {
       console.error('Forgot-password mail error:', mailErr.message);
+      await User.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            password: previousPassword,
+            needsPasswordChange: previousNeedsPasswordChange,
+          },
+        }
+      );
       return res.status(502).json({ message: 'Recovery email could not be sent. Please try again later or contact support.' });
     }
-
-    user.password            = tempPassword;
-    user.needsPasswordChange = true;
-    await user.save();
 
     res.status(200).json({ message: 'Password reset. Check your email for the temporary password.' });
   } catch (err) {

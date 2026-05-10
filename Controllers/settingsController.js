@@ -76,7 +76,7 @@ const addDepartment = async (req, res) => {
 // ── DELETE /api/settings/departments — remove a department ──────
 const removeDepartment = async (req, res) => {
   try {
-    const { name } = req.body;
+    const name = req.params.name || req.body.name;
     if (!name) return res.status(400).json({ message: 'Department name is required.' });
 
     const settings = await Settings.getOrCreate();

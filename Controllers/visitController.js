@@ -54,24 +54,10 @@ const getVisits = async (req, res) => {
       }).select('_id');
       filter.student = { $in: companyStudents.map(s => s._id) };
     } else if (req.user.role === 'industrial') {
-      
-      const orClauses = [];
-
-      if (req.user.companyId) {
-        const byCompany = await User.find({
-          companyId: req.user.companyId, role: 'student',
-        }).select('_id');
-        if (byCompany.length) orClauses.push(...byCompany.map(s => s._id));
-      }
-
       const byDirect = await User.find({
-        industrialSupervisor: req.user._id, role: 'student',
+        industrialSupervisor: req.user._id, role: 'student', isActive: true,
       }).select('_id');
-      if (byDirect.length) orClauses.push(...byDirect.map(s => s._id));
-
-      // Deduplicate
-      const uniqueIds = [...new Map(orClauses.map(id => [id.toString(), id])).values()];
-      filter.student = { $in: uniqueIds };
+      filter.student = { $in: byDirect.map(s => s._id) };
     }
     // Admins see all visits
 

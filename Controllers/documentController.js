@@ -7,6 +7,16 @@ const { requireStudentAccess } = require('../utils/accessControl');
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 
+const removeStoredFile = async (storedName) => {
+  if (!storedName) return;
+  const filePath = path.join(UPLOAD_DIR, storedName);
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+};
+
 // ── POST /api/documents — upload a PDF ───────────────────────────
 const uploadDocument = async (req, res) => {
   try {
@@ -15,26 +25,34 @@ const uploadDocument = async (req, res) => {
     }
 
     const { type = 'attachment-letter', studentId, isPublic } = req.body;
-    const isPublicDoc = isPublic === true || isPublic === 'true';
-    const targetStudent = isPublicDoc ? null : (studentId || req.user._id);
+    const requestedPublic = isPublic === true || isPublic === 'true';
+    if (requestedPublic && req.user.role !== 'admin') {
+      await removeStoredFile(req.file.filename);
+      return res.status(403).json({ message: 'Only administrators can upload public documents.' });
+    }
+    if (req.user.role === 'student' && (type !== 'final-report' || studentId)) {
+      await removeStoredFile(req.file.filename);
+      return res.status(403).json({ message: 'Students may only upload their own final report.' });
+    }
+
+    const isPublicDoc = req.user.role === 'admin' && requestedPublic;
+    const targetStudent = isPublicDoc ? null : (req.user.role === 'student' ? req.user._id : (studentId || null));
+    if (!isPublicDoc && !targetStudent) {
+      await removeStoredFile(req.file.filename);
+      return res.status(400).json({ message: 'A student is required for private documents.' });
+    }
 
     // Student uploading final report: replace any previous submission so there's always exactly one
     if (type === 'final-report' && !isPublicDoc) {
       const old = await Document.find({ student: targetStudent, type: 'final-report' });
-      old.forEach(d => {
-        const fp = path.join(UPLOAD_DIR, d.storedName);
-        if (fs.existsSync(fp)) fs.unlinkSync(fp);
-      });
+      await Promise.all(old.map(d => removeStoredFile(d.storedName)));
       await Document.deleteMany({ student: targetStudent, type: 'final-report' });
     }
 
     // Admin uploading a public letter: replace any existing public doc with same original name
     if (isPublicDoc) {
       const old = await Document.find({ isPublic: true, filename: req.file.originalname });
-      old.forEach(d => {
-        const fp = path.join(UPLOAD_DIR, d.storedName);
-        if (fs.existsSync(fp)) fs.unlinkSync(fp);
-      });
+      await Promise.all(old.map(d => removeStoredFile(d.storedName)));
       await Document.deleteMany({ isPublic: true, filename: req.file.originalname });
     }
 
@@ -92,7 +110,7 @@ const getDocuments = async (req, res) => {
 
     } else if (req.user.role === 'industrial') {
       const myStudents = await User.find({
-        companyId: req.user.companyId, role: 'student', isActive: true,
+        industrialSupervisor: req.user._id, role: 'student', isActive: true,
       }).select('_id');
       filter.student  = { $in: myStudents.map(s => s._id) };
       filter.isPublic = { $ne: true };
@@ -157,8 +175,7 @@ const deleteDocument = async (req, res) => {
     }
 
     // Remove file from disk
-    const filePath = path.join(UPLOAD_DIR, doc.storedName);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    await removeStoredFile(doc.storedName);
 
     await doc.deleteOne();
     res.status(200).json({ success: true, message: 'Document deleted.' });

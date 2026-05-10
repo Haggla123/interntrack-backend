@@ -18,8 +18,7 @@ const canAccessStudent = (user, student) => {
     return idEquals(getUserId(student.academicSupervisor), user._id);
   }
   if (user.role === 'industrial') {
-    return idEquals(getUserId(student.industrialSupervisor), user._id) ||
-      (user.companyId && idEquals(getUserId(student.companyId), user.companyId));
+    return idEquals(getUserId(student.industrialSupervisor), user._id);
   }
   if (user.role === 'company_manager') {
     return user.companyId && idEquals(getUserId(student.companyId), user.companyId);
