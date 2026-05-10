@@ -84,6 +84,7 @@ const sendToken = (user, statusCode, res) => {
       academicSupervisor:  user.academicSupervisor,
       companyOrg:          user.companyOrg,
       profilePicture:      user.profilePicture,
+      lastLogin:           user.lastLogin,
     },
   });
 };
