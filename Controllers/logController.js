@@ -1,11 +1,8 @@
 // Controllers/logController.js
 const Log      = require('../models/Log');
 const Settings = require('../models/Settings');
-
-const isWeekday = (date) => {
-  const day = date.getDay();
-  return day >= 1 && day <= 5;
-};
+const Company  = require('../models/Company');
+const { canAccessStudent, requireStudentAccess } = require('../utils/accessControl');
 
 const toDateOnly = (date) => {
   const d = new Date(date);
@@ -24,10 +21,18 @@ const getWeekNumber = (existingLogs) => {
 // ── POST /api/logs ───────────────────────────────────────────────
 const submitLog = async (req, res) => {
   try {
-    const { activity, skills, companyName, companyId } = req.body;
+    const { activities, notes, activity, skills, companyName, companyId } = req.body;
 
-    if (!activity || activity.trim().length < 20) {
-      return res.status(400).json({ message: 'Activity must be at least 20 characters.' });
+    // Support both new checkbox format and legacy text format
+    const hasCheckboxes = Array.isArray(activities) && activities.length > 0;
+    const hasLegacyText = activity && activity.trim().length >= 20;
+
+    if (!hasCheckboxes && !hasLegacyText) {
+      return res.status(400).json({
+        message: hasCheckboxes === false && activities
+          ? 'Please select at least one activity.'
+          : 'Please select at least one activity or write at least 20 characters.',
+      });
     }
 
     // Guard: only placed students can submit logs
@@ -35,13 +40,22 @@ const submitLog = async (req, res) => {
       return res.status(403).json({ message: 'You must be placed at a company before submitting log entries.' });
     }
 
-    const now = new Date();
+    let hasIndustrialContact = Boolean(req.user.industrialSupervisor);
+    if (!hasIndustrialContact && req.user.companyId) {
+      const company = await Company.findById(req.user.companyId)
+        .select('manager supervisorName supervisorEmail');
+      hasIndustrialContact = Boolean(
+        company?.manager || company?.supervisorName || company?.supervisorEmail
+      );
+    }
 
-    if (!isWeekday(now)) {
-      return res.status(400).json({
-        message: 'Logs can only be submitted on weekdays (Monday – Friday).',
+    if (!req.user.academicSupervisor || !hasIndustrialContact) {
+      return res.status(403).json({
+        message: 'Your academic supervisor and industrial supervisor must be assigned before you can submit log entries.',
       });
     }
+
+    const now = new Date();
 
     const cfg = await Settings.getOrCreate();
     if (cfg.strictTimeWindow) {
@@ -72,11 +86,26 @@ const submitLog = async (req, res) => {
     const week             = getWeekNumber(existingLogs);
     const resolvedCompanyId = companyId || req.user.companyId || null;
 
+    // Build a human-readable activity string from checkbox keys for backward compat
+    let activityText = '';
+    if (hasCheckboxes) {
+      // Resolve keys to labels using the settings category list
+      const catMap = {};
+      (cfg.activityCategories || []).forEach(c => { catMap[c.key] = c.label; });
+      const labels = activities.map(k => catMap[k] || k);
+      activityText = labels.join(', ');
+      if (notes && notes.trim()) activityText += ` — ${notes.trim()}`;
+    } else {
+      activityText = activity.trim();
+    }
+
     const log = await Log.create({
       student:     req.user._id,
       company:     resolvedCompanyId,
       companyName: companyName || '',
-      activity:    activity.trim(),
+      activities:  hasCheckboxes ? activities : [],
+      notes:       notes ? notes.trim() : '',
+      activity:    activityText,
       skills:      skills ? skills.trim() : '',
       week,
       date:        now,
@@ -101,6 +130,9 @@ const getMyLogs = async (req, res) => {
 // ── GET /api/logs/student/:studentId ────────────────────────────
 const getStudentLogs = async (req, res) => {
   try {
+    const student = await requireStudentAccess(req, res, req.params.studentId);
+    if (!student) return;
+
     const limit = Math.min(500, parseInt(req.query.limit) || 500);
     const page  = Math.max(1,   parseInt(req.query.page)  || 1);
     const skip  = (page - 1) * limit;
@@ -125,33 +157,23 @@ const getPendingLogs = async (req, res) => {
     const filter = { status: 'Pending' };
 
     if (req.user.role === 'industrial') {
-      // Use $or: a log is visible if it belongs to a student linked by
-      // company OR by direct industrialSupervisor assignment.
-      // Old code used if/else — if companyId was null, it fell back to
-      // industrialSupervisor only, but missed students linked by company.
-      // If companyId was set, it checked only company and missed direct links.
       const User = require('../models/User');
-      const orConditions = [];
-
-      if (req.user.companyId) {
-        orConditions.push({ company: req.user.companyId });
-      }
-
-      const directStudents = await User.find({
+      const myStudents = await User.find({
         role: 'student',
         industrialSupervisor: req.user._id,
         isActive: true,
       }).select('_id');
 
-      if (directStudents.length > 0) {
-        orConditions.push({ student: { $in: directStudents.map(s => s._id) } });
-      }
-
-      if (orConditions.length === 0) {
+      if (myStudents.length === 0) {
         return res.status(200).json({ success: true, data: [] });
       }
-
-      filter.$or = orConditions;
+      filter.student = { $in: myStudents.map(s => s._id) };
+    } else if (req.user.role === 'company_manager') {
+      if (req.user.companyId) {
+        filter.company = req.user.companyId;
+      } else {
+        return res.status(200).json({ success: true, data: [] });
+      }
     }
 
     const logs = await Log.find(filter)
@@ -163,15 +185,40 @@ const getPendingLogs = async (req, res) => {
   }
 };
 
+const getLogs = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+    const limit = Math.min(500, parseInt(req.query.limit) || 500);
+    const page  = Math.max(1, parseInt(req.query.page) || 1);
+    const skip  = (page - 1) * limit;
+    const [logs, total] = await Promise.all([
+      Log.find()
+        .sort({ date: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('student', 'name indexNumber department'),
+      Log.countDocuments(),
+    ]);
+    res.status(200).json({ success: true, data: logs, total, page, pages: Math.ceil(total / limit) });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // ── PUT /api/logs/:id/approve ────────────────────────────────────
 const approveLog = async (req, res) => {
   try {
-    const log = await Log.findByIdAndUpdate(
-      req.params.id,
-      { status: 'Approved', supervisorNote: req.body.note || '' },
-      { new: true }
-    );
+    const log = await Log.findById(req.params.id).populate('student', '_id role academicSupervisor industrialSupervisor companyId');
     if (!log) return res.status(404).json({ message: 'Log not found.' });
+    if (!canAccessStudent(req.user, log.student)) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    log.status = 'Approved';
+    log.supervisorNote = req.body.note || '';
+    await log.save();
     res.status(200).json({ success: true, data: log });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -181,12 +228,15 @@ const approveLog = async (req, res) => {
 // ── PUT /api/logs/:id/reject ─────────────────────────────────────
 const rejectLog = async (req, res) => {
   try {
-    const log = await Log.findByIdAndUpdate(
-      req.params.id,
-      { status: 'Rejected', supervisorNote: req.body.note || '' },
-      { new: true }
-    );
+    const log = await Log.findById(req.params.id).populate('student', '_id role academicSupervisor industrialSupervisor companyId');
     if (!log) return res.status(404).json({ message: 'Log not found.' });
+    if (!canAccessStudent(req.user, log.student)) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    log.status = 'Rejected';
+    log.supervisorNote = req.body.note || '';
+    await log.save();
     res.status(200).json({ success: true, data: log });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -194,5 +244,5 @@ const rejectLog = async (req, res) => {
 };
 
 module.exports = {
-  submitLog, getMyLogs, getStudentLogs, getPendingLogs, approveLog, rejectLog,
+  submitLog, getMyLogs, getStudentLogs, getPendingLogs, getLogs, approveLog, rejectLog,
 };

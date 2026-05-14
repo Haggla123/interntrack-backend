@@ -2,40 +2,52 @@
 const User   = require('../models/User');
 const Log    = require('../models/Log');
 const Grade  = require('../models/Grade');
+const Company = require('../models/Company');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const { canAccessStudent } = require('../utils/accessControl');
 
 const makeTempPassword = () =>
   'UENR-' + crypto.randomBytes(6).toString('base64url').slice(0, 8);
 
+const sendEmail = async (to, subject, html) => {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
+    body: JSON.stringify({
+      sender:      { name: 'UENR InternTrack', email: process.env.MAIL_ADDRESS },
+      to:          [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Brevo error ${res.status}`);
+  }
+};
+
 const sendPasswordResetEmail = async (email, name, tempPassword, identifier) => {
   if (!email) return;
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  });
-  await transporter.sendMail({
-    from:    `"UENR InternTrack" <${process.env.EMAIL_USER}>`,
-    to:      email,
-    subject: 'InternTrack – Your Password Has Been Reset',
-    html: `
-      <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
-        <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
-        <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — Password Reset</p>
-        <hr style="border:0;border-top:1px solid #eee;" />
-        <h3 style="color:#2c5282;">Hi ${name},</h3>
-        <p>Your InternTrack password has been reset by an administrator.</p>
-        <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #e53e3e;">
-          <p style="margin:5px 0;"><strong>Login ID:</strong> ${identifier}</p>
-          <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;font-size:18px;">${tempPassword}</span></p>
-          <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
-        </div>
-        <p style="font-size:0.85em;color:#718096;">You will be asked to set a new password after logging in.</p>
-        <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
-          &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
-        </footer>
-      </div>`,
-  });
+  await sendEmail(
+    email,
+    'InternTrack – Your Password Has Been Reset',
+    `<div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
+      <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
+      <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — Password Reset</p>
+      <hr style="border:0;border-top:1px solid #eee;" />
+      <h3 style="color:#2c5282;">Hi ${name},</h3>
+      <p>Your InternTrack password has been reset by an administrator.</p>
+      <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #e53e3e;">
+        <p style="margin:5px 0;"><strong>Login ID:</strong> ${email}</p>
+        <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;font-size:18px;">${tempPassword}</span></p>
+        <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
+      </div>
+      <p style="font-size:0.85em;color:#718096;">You will be asked to set a new password after logging in.</p>
+      <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
+        &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
+      </footer>
+    </div>`
+  );
 };
 
 // ── GET /api/students ────────────────────────────────────────────
@@ -47,20 +59,22 @@ const getStudents = async (req, res) => {
       filter.academicSupervisor = req.user._id;
 
     } else if (req.user.role === 'industrial') {
-      // Use $or: student visible if companyId matches OR industrialSupervisor matches.
-      // Previously only companyId was checked — if supervisor.companyId was null
-      // (common with partial seed or manual account creation) no students were returned.
-      const orConditions = [];
+      // Industrial supervisors only see students explicitly assigned to them
+      filter.industrialSupervisor = req.user._id;
+
+    } else if (req.user.role === 'company_manager') {
+      // Company managers see all students placed at their company
       if (req.user.companyId) {
-        orConditions.push({ companyId: req.user.companyId });
+        filter.companyId = req.user.companyId;
+      } else {
+        return res.status(200).json({ success: true, data: [] });
       }
-      orConditions.push({ industrialSupervisor: req.user._id });
-      filter.$or = orConditions;
     }
 
     const students = await User.find(filter)
       .select('-password')
-      .populate('academicSupervisor', 'name email department staffId')
+      .populate('academicSupervisor', 'name email department staffId profilePicture')
+      .populate('industrialSupervisor', 'name email phone companyOrg profilePicture')
       .populate('companyId', 'name location category lat long radius supervisorName supervisorEmail supervisorPhone')
       .sort({ createdAt: -1 });
 
@@ -93,13 +107,28 @@ const getStudentStats = async (req, res) => {
 
     const totalWeeks = Math.max(1, parseInt(req.query.totalWeeks) || 6);
 
+    let allowedIds = ids;
+    if (req.user.role === 'academic') {
+      const assigned = await User.find({
+        _id: { $in: ids },
+        role: 'student',
+        isActive: true,
+        academicSupervisor: req.user._id,
+      }).select('_id');
+      allowedIds = assigned.map(s => s._id);
+    }
+
+    if (!allowedIds.length) {
+      return res.status(200).json({ success: true, data: {} });
+    }
+
     const [logAgg, gradeAgg] = await Promise.all([
       Log.aggregate([
-        { $match: { student: { $in: ids }, status: 'Approved' } },
+        { $match: { student: { $in: allowedIds }, status: 'Approved' } },
         { $group: { _id: '$student', approvedCount: { $sum: 1 } } },
       ]),
       Grade.aggregate([
-        { $match: { student: { $in: ids } } },
+        { $match: { student: { $in: allowedIds } } },
         { $sort: { updatedAt: -1 } },
         { $group: {
           _id: '$student',
@@ -123,7 +152,7 @@ const getStudentStats = async (req, res) => {
     });
 
     const stats = {};
-    ids.forEach(id => {
+    allowedIds.forEach(id => {
       const sid          = id.toString();
       const approvedCount = logMap[sid] || 0;
       const weeks        = Math.min(Math.floor(approvedCount / 5), totalWeeks);
@@ -150,10 +179,14 @@ const getStudent = async (req, res) => {
   try {
     const student = await User.findOne({ _id: req.params.id, role: 'student' })
       .select('-password')
-      .populate('academicSupervisor', 'name email department staffId')
+      .populate('academicSupervisor', 'name email department staffId profilePicture')
+      .populate('industrialSupervisor', 'name email phone companyOrg profilePicture')
       .populate('companyId', 'name location category lat long radius supervisorName supervisorEmail supervisorPhone');
 
     if (!student) return res.status(404).json({ message: 'Student not found.' });
+    if (!canAccessStudent(req.user, student)) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
     res.status(200).json({ success: true, data: student });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -213,7 +246,7 @@ const assignStudent = async (req, res) => {
       req.params.id, updates, { new: true, runValidators: true }
     ).select('-password')
      .populate('academicSupervisor',  'name email department staffId')
-     .populate('industrialSupervisor','name email companyOrg')
+     .populate('industrialSupervisor','name email companyOrg profilePicture')
      .populate('companyId', 'name location category lat long radius supervisorName supervisorEmail supervisorPhone');
 
     if (!student) return res.status(404).json({ message: 'Student not found.' });
@@ -258,6 +291,9 @@ const resetStudentPassword = async (req, res) => {
 // ── PUT /api/students/:id/revoke ─────────────────────────────────
 const revokePlacement = async (req, res) => {
   try {
+    const existing = await User.findOne({ _id: req.params.id, role: 'student' })
+      .select('companyId placementStatus');
+
     const student = await User.findByIdAndUpdate(
       req.params.id,
       {
@@ -269,6 +305,9 @@ const revokePlacement = async (req, res) => {
     ).select('-password');
 
     if (!student) return res.status(404).json({ message: 'Student not found.' });
+    if (existing?.placementStatus === 'Active' && existing.companyId) {
+      await Company.findByIdAndUpdate(existing.companyId, { $inc: { slots: 1 } });
+    }
     res.status(200).json({ success: true, data: student });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -297,8 +336,12 @@ const deleteStudent = async (req, res) => {
   try {
     const student = await User.findOne({ _id: req.params.id, role: 'student' });
     if (!student) return res.status(404).json({ message: 'Student not found.' });
+    const shouldRestoreSlot = student.isActive && student.placementStatus === 'Active' && student.companyId;
     student.isActive = false;
     await student.save();
+    if (shouldRestoreSlot) {
+      await Company.findByIdAndUpdate(student.companyId, { $inc: { slots: 1 } });
+    }
     res.status(200).json({ success: true, message: `${student.name} has been deactivated.` });
   } catch (err) {
     res.status(500).json({ message: err.message });

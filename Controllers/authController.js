@@ -1,54 +1,63 @@
 // Controllers/authController.js
-const jwt        = require('jsonwebtoken');
-const crypto     = require('crypto');
-const User       = require('../models/User');
-const nodemailer = require('nodemailer');
-
-const createTransporter = () =>
-  nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  });
+const jwt    = require('jsonwebtoken');
+const crypto = require('crypto');
+const User   = require('../models/User');
 
 const makeTempPassword = () =>
   'UENR-' + crypto.randomBytes(6).toString('base64url').slice(0, 8);
 
-const sendWelcomeEmail = async (email, name, tempPassword, role = 'student', identifier = '') => {
-  const transporter = createTransporter();
-  const roleLabel = role === 'student'   ? 'Student'
-                  : role === 'academic'  ? 'Academic Supervisor'
-                  : role === 'admin'     ? 'Administrator'
-                  : 'Industrial Supervisor';
-  await transporter.sendMail({
-    from: `"UENR InternTrack" <${process.env.EMAIL_USER}>`,
-    to:   email,
-    subject: 'Your InternTrack Login Details – UENR',
-    html: `
-      <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
-        <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
-        <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — ${roleLabel} Account</p>
-        <hr style="border:0;border-top:1px solid #eee;" />
-        <h3 style="color:#2c5282;">Hi ${name},</h3>
-        <p>Welcome to <strong>InternTrack</strong>! Your account has been created. Use the credentials below to log in.</p>
-        <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #3182ce;">
-          <p style="margin:5px 0;"><strong>Login ID:</strong> ${email}</p>
-          <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;">${tempPassword}</span></p>
-          <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
-        </div>
-        <div style="text-align:center;margin:28px 0;">
-          <a href="${process.env.CLIENT_URL}/login"
-             style="background:#3182ce;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">
-            Login to Portal
-          </a>
-        </div>
-        <p style="font-size:0.85em;color:#718096;">
-          <strong>Security Notice:</strong> Change this temporary password on your first login.
-        </p>
-        <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
-          &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
-        </footer>
-      </div>`,
+const sendEmail = async (to, subject, html) => {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method:  'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key':      process.env.BREVO_API_KEY,
+    },
+    body: JSON.stringify({
+      sender:      { name: 'UENR InternTrack', email: process.env.MAIL_ADDRESS },
+      to:          [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
   });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Brevo error ${res.status}`);
+  }
+};
+
+const sendWelcomeEmail = async (email, name, tempPassword, role = 'student', identifier = '') => {
+  const roleLabel = role === 'student'          ? 'Student'
+                  : role === 'academic'         ? 'Academic Supervisor'
+                  : role === 'admin'            ? 'Administrator'
+                  : role === 'company_manager'  ? 'Company Manager'
+                  : 'Industrial Supervisor';
+  await sendEmail(
+    email,
+    'Your InternTrack Login Details – UENR',
+    `<div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;padding:24px;border-radius:10px;">
+      <h2 style="color:#2c5282;text-align:center;">University of Energy and Natural Resources</h2>
+      <p style="text-align:center;color:#64748b;font-size:13px;">InternTrack Portal — ${roleLabel} Account</p>
+      <hr style="border:0;border-top:1px solid #eee;" />
+      <h3 style="color:#2c5282;">Hi ${name},</h3>
+      <p>Welcome to <strong>InternTrack</strong>! Your account has been created. Use the credentials below to log in.</p>
+      <div style="background:#f7fafc;padding:16px;border-radius:6px;margin:20px 0;border-left:4px solid #3182ce;">
+        <p style="margin:5px 0;"><strong>Login ID:</strong> ${email}</p>
+        <p style="margin:5px 0;"><strong>Temporary Password:</strong> <span style="color:#e53e3e;font-weight:bold;">${tempPassword}</span></p>
+        <p style="margin:5px 0;"><strong>Portal:</strong> <a href="${process.env.CLIENT_URL}/login">${process.env.CLIENT_URL}/login</a></p>
+      </div>
+      <div style="text-align:center;margin:28px 0;">
+        <a href="${process.env.CLIENT_URL}/login"
+           style="background:#3182ce;color:#fff;padding:12px 30px;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;">
+          Login to Portal
+        </a>
+      </div>
+      <p style="font-size:0.85em;color:#718096;"><strong>Security Notice:</strong> Change this temporary password on your first login.</p>
+      <footer style="margin-top:24px;border-top:1px solid #eee;padding-top:12px;font-size:0.8em;color:#a0aec0;text-align:center;">
+        &copy; ${new Date().getFullYear()} UENR InternTrack System | Sunyani, Ghana
+      </footer>
+    </div>`
+  );
 };
 
 const signToken = (user) =>
@@ -74,6 +83,8 @@ const sendToken = (user, statusCode, res) => {
       companyName:         user.companyName,
       academicSupervisor:  user.academicSupervisor,
       companyOrg:          user.companyOrg,
+      profilePicture:      user.profilePicture,
+      lastLogin:           user.lastLogin,
     },
   });
 };
@@ -212,10 +223,13 @@ const login = async (req, res) => {
     }
 
     if (req.body.role) {
-      const submitted = req.body.role === 'industry' ? 'industrial' : req.body.role;
-      if (submitted !== user.role) {
+      let submitted = req.body.role === 'industry' ? 'industrial' : req.body.role;
+      // Allow company_manager users to log in via the 'industrial' tab
+      const isCompatible = submitted === user.role
+        || (submitted === 'industrial' && user.role === 'company_manager');
+      if (!isCompatible) {
         return res.status(403).json({
-          message: `Incorrect portal selected. Please choose the ${user.role.charAt(0).toUpperCase() + user.role.slice(1)} portal to sign in.`,
+          message: `Incorrect portal selected. Please choose the ${user.role === 'company_manager' ? 'Industry' : user.role.charAt(0).toUpperCase() + user.role.slice(1)} portal to sign in.`,
         });
       }
     }
@@ -235,11 +249,15 @@ const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
       .select('-password')
-      .populate('academicSupervisor',   'name email phone department staffId')
+      .populate('academicSupervisor',   'name email phone department staffId profilePicture')
       // FIX: industrialSupervisor was not populated so student dashboard
       // could never show the industrial supervisor's name/contact details.
-      .populate('industrialSupervisor', 'name email phone companyOrg')
-      .populate('companyId', 'name location category supervisorName supervisorEmail supervisorPhone lat long radius');
+      .populate('industrialSupervisor', 'name email phone companyOrg profilePicture')
+      .populate({
+        path: 'companyId',
+        select: 'name location category supervisorName supervisorEmail supervisorPhone lat long radius manager',
+        populate: { path: 'manager', select: 'name email phone companyOrg profilePicture' },
+      });
     if (!user) return res.status(404).json({ message: 'User not found.' });
     res.status(200).json({ user });
   } catch (err) {
@@ -274,15 +292,26 @@ const changePassword = async (req, res) => {
 // ── POST /api/auth/forgot-password  (public) ────────────────────
 const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, role } = req.body;
     if (!email) return res.status(400).json({ message: 'Email address is required.' });
 
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(200).json({ message: 'If that email is registered, a reset link has been sent.' });
     }
+    if (role) {
+      const submitted = role === 'industry' ? 'industrial' : role;
+      const isCompatible = submitted === user.role
+        || (submitted === 'industrial' && user.role === 'company_manager');
+      if (!isCompatible) {
+        return res.status(200).json({ message: 'If that email is registered for this portal, recovery instructions have been sent.' });
+      }
+    }
 
     const tempPassword = makeTempPassword();
+    const previousPassword = user.password;
+    const previousNeedsPasswordChange = user.needsPasswordChange;
+
     user.password            = tempPassword;
     user.needsPasswordChange = true;
     await user.save();
@@ -291,6 +320,16 @@ const forgotPassword = async (req, res) => {
       await sendWelcomeEmail(email, user.name, tempPassword, user.role, user.indexNumber || user.staffId || email);
     } catch (mailErr) {
       console.error('Forgot-password mail error:', mailErr.message);
+      await User.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            password: previousPassword,
+            needsPasswordChange: previousNeedsPasswordChange,
+          },
+        }
+      );
+      return res.status(502).json({ message: 'Recovery email could not be sent. Please try again later or contact support.' });
     }
 
     res.status(200).json({ message: 'Password reset. Check your email for the temporary password.' });
@@ -299,4 +338,66 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, changePassword, forgotPassword };
+// ── PATCH /api/auth/me  (update own profile) ────────────────────
+const updateProfile = async (req, res) => {
+  try {
+    // Students may only update: name, email, phone, department
+    // (indexNumber is immutable — assigned by admin)
+    const allowed = ['name', 'email', 'phone', 'department'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: 'No valid fields provided for update.' });
+    }
+
+    // Prevent email collisions
+    if (updates.email) {
+      const exists = await User.findOne({ email: updates.email, _id: { $ne: req.user._id } });
+      if (exists) return res.status(400).json({ message: 'This email is already in use by another account.' });
+    }
+
+    const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true, runValidators: true })
+      .select('-password')
+      .populate('academicSupervisor',   'name email phone department staffId profilePicture')
+      .populate('industrialSupervisor', 'name email phone companyOrg profilePicture')
+      .populate({
+        path: 'companyId',
+        select: 'name location category supervisorName supervisorEmail supervisorPhone lat long radius manager',
+        populate: { path: 'manager', select: 'name email phone companyOrg profilePicture' },
+      });
+
+    res.status(200).json({ message: 'Profile updated.', user });
+  } catch (err) {
+    if (err.code === 11000 || err.code === '11000') {
+      return res.status(400).json({ message: 'A user with these details already exists.' });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ── POST /api/auth/me/avatar  (upload profile picture) ─────────
+const uploadAvatar = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'No image file provided.' });
+
+    // Store the relative path: avatars/<filename>
+    const avatarPath = `avatars/${req.file.filename}`;
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { profilePicture: avatarPath },
+      { new: true }
+    ).select('-password');
+
+    res.status(200).json({
+      message: 'Profile picture updated.',
+      profilePicture: avatarPath,
+      user,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { register, login, getMe, changePassword, forgotPassword, updateProfile, uploadAvatar };

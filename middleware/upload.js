@@ -1,6 +1,3 @@
-// middleware/upload.js
-// FIX: This file was empty — req.file was always undefined, causing
-// every document upload to return "No file uploaded." immediately.
 const path   = require('path');
 const multer = require('multer');
 const fs     = require('fs');
@@ -22,7 +19,8 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (_req, file, cb) => {
-  if (file.mimetype === 'application/pdf') {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (file.mimetype === 'application/pdf' && ext === '.pdf') {
     cb(null, true);
   } else {
     cb(new Error('Only PDF files are accepted.'), false);

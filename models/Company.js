@@ -12,7 +12,20 @@ const CompanySchema = new mongoose.Schema(
     radius:   { type: Number, default: 150 },
     isActive: { type: Boolean, default: true },
 
-    // Industrial supervisor
+    // Company manager / HR who assigns interns to supervisors
+    manager: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+
+    // All industrial supervisors at this company
+    supervisors: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    }],
+
+    // Legacy single industrial supervisor (backward compat)
     supervisorName:  { type: String, default: '', trim: true },
     supervisorEmail: { type: String, default: '', trim: true },
     supervisorPhone: { type: String, default: '', trim: true },

@@ -1,19 +1,32 @@
 require('dotenv').config();
-const express        = require('express');
-const cors           = require('cors');
-const helmet         = require('helmet');
-const mongoSanitize  = require('express-mongo-sanitize');
-const compression    = require('compression');
-const rateLimit      = require('express-rate-limit');
-const connectDB      = require('./config/db');
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
+const connectDB = require('./config/db');
 
 const app = express();
+
+const requiredEnv = ['MONGO_URI', 'JWT_SECRET', 'CLIENT_URL'];
+const missingEnv = requiredEnv.filter(key => !process.env[key]);
+if (missingEnv.length) {
+  console.error(`Missing required environment variables: ${missingEnv.join(', ')}`);
+  process.exit(1);
+}
+
+if (process.env.JWT_SECRET.length < 32) {
+  console.error('JWT_SECRET must be at least 32 characters.');
+  process.exit(1);
+}
 
 // ── Database ──────────────────────────────────────────────────────
 connectDB();
 
 // ── Security Headers (helmet) ─────────────────────────────────────
-app.use(helmet());
+// Disable crossOriginResourcePolicy to allow frontend (on different port) to load images
+app.use(helmet({ crossOriginResourcePolicy: false }));
 
 // ── CORS ──────────────────────────────────────────────────────────
 // In production only CLIENT_URL is allowed.
@@ -22,7 +35,7 @@ const allowedOrigins = [
   process.env.CLIENT_URL,
   ...(process.env.NODE_ENV !== 'production'
     ? ['http://localhost:3000', 'http://localhost:5173',
-       'http://127.0.0.1:3000', 'http://127.0.0.1:5173']
+      'http://127.0.0.1:3000', 'http://127.0.0.1:5173']
     : []),
 ].filter(Boolean);
 
@@ -36,8 +49,8 @@ app.use(cors({
 }));
 
 // ── Body Parsing ──────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // ── NoSQL Injection Sanitization ──────────────────────────────────
 // Strips keys starting with $ or containing . from req.body / query / params
@@ -45,6 +58,10 @@ app.use(mongoSanitize());
 
 // ── Compression ───────────────────────────────────────────────────
 app.use(compression());
+
+// ── Static file serving (public avatars only) ─────────
+const path = require('path');
+app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
 
 // ── Rate Limiting ─────────────────────────────────────────────────
 // Strict limiter for auth endpoints
@@ -66,7 +83,7 @@ const generalLimiter = rateLimit({
 });
 
 app.use('/api/', generalLimiter);
-app.use('/api/auth/login',           authLimiter);
+app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
 
 // ── Base Routes ───────────────────────────────────────────────────
@@ -79,17 +96,19 @@ app.get('/api/health', (req, res) => {
 });
 
 // ── API Routes ────────────────────────────────────────────────────
-app.use('/api/auth',        require('./Routes/auth'));
-app.use('/api/companies',   require('./Routes/companies'));
-app.use('/api/students',    require('./Routes/students'));
+app.use('/api/cm', require('./Routes/companyManager'));
+app.use('/api/auth', require('./Routes/auth'));
+app.use('/api/companies', require('./Routes/companies'));
+app.use('/api/students', require('./Routes/students'));
 app.use('/api/supervisors', require('./Routes/supervisors'));
-app.use('/api/logs',        require('./Routes/logs'));
-app.use('/api/grades',      require('./Routes/grades'));
-app.use('/api/placements',  require('./Routes/placements'));
-app.use('/api/documents',   require('./Routes/documents'));
-app.use('/api/visits',      require('./Routes/visits'));
-app.use('/api/broadcast',   require('./Routes/broadcast'));
-app.use('/api/settings',    require('./Routes/settings'));
+app.use('/api/logs', require('./Routes/logs'));
+app.use('/api/grades', require('./Routes/grades'));
+app.use('/api/placements', require('./Routes/placements'));
+app.use('/api/documents', require('./Routes/documents'));
+app.use('/api/visits', require('./Routes/visits'));
+app.use('/api/broadcast', require('./Routes/broadcast'));
+app.use('/api/notifications', require('./Routes/notifications'));
+app.use('/api/settings', require('./Routes/settings'));
 
 // ── 404 Catch-all ─────────────────────────────────────────────────
 app.use((req, res) => {
@@ -115,4 +134,5 @@ app.use((err, req, res, next) => {
 
 // ── Start ─────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
+// Server start - Routes refreshed
 app.listen(PORT, () => console.log(`🚀  InternTrack API running on port ${PORT} [${process.env.NODE_ENV}]`));

@@ -13,13 +13,14 @@ const userSchema = new mongoose.Schema({
 
   role: {
     type: String,
-    enum: ['admin', 'student', 'academic', 'industrial'],
+    enum: ['admin', 'student', 'academic', 'industrial', 'company_manager'],
     required: true,
   },
 
   // ── Student-specific fields ──────────────────────────────────
   indexNumber:    { type: String, sparse: true, unique: true },   // e.g. UEB3214522
   department:     { type: String },
+  phone:          { type: String, default: '' },
   completedWeeks: { type: Number, default: 0 },
   totalWeeks:     { type: Number, default: 6 },
   status: {
@@ -57,6 +58,7 @@ const userSchema = new mongoose.Schema({
   needsPasswordChange: { type: Boolean, default: true },
 
   // ── Security / meta ─────────────────────────────────────────
+  profilePicture: { type: String, default: '' },  // relative path in uploads/avatars/
   isActive:     { type: Boolean, default: true },
   lastLogin:    { type: Date },
   lastLoginIp:  { type: String },

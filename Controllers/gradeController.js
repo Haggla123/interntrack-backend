@@ -1,6 +1,7 @@
 // Controllers/gradeController.js
 const Grade = require('../models/Grade');
 const User  = require('../models/User');
+const { canAccessStudent, requireStudentAccess } = require('../utils/accessControl');
 
 // ── POST /api/grades ─────────────────────────────────────────────
 const submitGrade = async (req, res) => {
@@ -18,19 +19,19 @@ const submitGrade = async (req, res) => {
 
     const student = await User.findById(studentId);
     if (!student) return res.status(404).json({ message: 'Student not found.' });
+    if (!canAccessStudent(req.user, student)) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
 
     const gradeType = type || (req.user.role === 'industrial' ? 'industrial' : 'academic');
 
     // ── Ownership checks ─────────────────────────────────────────
     if (req.user.role === 'industrial') {
-      // Industrial supervisor may only grade students at their company
-      const sameCompany = student.companyId &&
-        req.user.companyId &&
-        student.companyId.toString() === req.user.companyId.toString();
+      // Industrial supervisor may only grade students explicitly assigned to them.
       const directLink  = student.industrialSupervisor &&
         student.industrialSupervisor.toString() === req.user._id.toString();
-      if (!sameCompany && !directLink) {
-        return res.status(403).json({ message: 'You can only evaluate students at your company.' });
+      if (!directLink) {
+        return res.status(403).json({ message: 'You can only evaluate students assigned to you.' });
       }
     } else if (req.user.role === 'academic') {
       // Academic supervisor may only grade students assigned to them
@@ -61,12 +62,9 @@ const submitGrade = async (req, res) => {
       { new: true, upsert: true, runValidators: true }
     );
 
-    // FIX: Only mark the student as fully "Graded" when an academic or
+    // Only mark the student as fully "Graded" when an academic or
     // report grade is submitted. Industrial scores are intermediate inputs
     // that academic supervisors use to arrive at the final grade.
-    // Previously, any industrial submission set gradeStatus = 'Graded',
-    // making the GradingSection show those students as complete before
-    // the academic supervisor had reviewed them.
     if (gradeType === 'academic' || gradeType === 'report') {
       await User.findByIdAndUpdate(studentId, {
         gradeStatus: 'Graded',
@@ -90,27 +88,27 @@ const updateGrade = async (req, res) => {
       safetyAdherence, workIndependently,
     } = req.body;
 
-    const record = await Grade.findByIdAndUpdate(
-      req.params.id,
-      {
-        ...(grade               !== undefined && { grade }),
-        ...(score               !== undefined && { score }),
-        ...(comments            !== undefined && { comments }),
-        ...(attendance          !== undefined && { attendance }),
-        ...(punctuality         !== undefined && { punctuality }),
-        ...(cooperation         !== undefined && { cooperation }),
-        ...(aptitudeForLearning !== undefined && { aptitudeForLearning }),
-        ...(understandingOfJob  !== undefined && { understandingOfJob }),
-        ...(safetyAdherence     !== undefined && { safetyAdherence }),
-        ...(workIndependently   !== undefined && { workIndependently }),
-        submittedBy: req.user._id,
-      },
-      { new: true, runValidators: true }
-    );
-
+    const record = await Grade.findById(req.params.id)
+      .populate('student', '_id role academicSupervisor industrialSupervisor companyId');
     if (!record) return res.status(404).json({ message: 'Grade record not found.' });
+    if (!canAccessStudent(req.user, record.student)) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
 
-    // FIX: Same rule — only sync finalGrade for academic/report types
+    if (grade               !== undefined) record.grade = grade;
+    if (score               !== undefined) record.score = score;
+    if (comments            !== undefined) record.comments = comments;
+    if (attendance          !== undefined) record.attendance = attendance;
+    if (punctuality         !== undefined) record.punctuality = punctuality;
+    if (cooperation         !== undefined) record.cooperation = cooperation;
+    if (aptitudeForLearning !== undefined) record.aptitudeForLearning = aptitudeForLearning;
+    if (understandingOfJob  !== undefined) record.understandingOfJob = understandingOfJob;
+    if (safetyAdherence     !== undefined) record.safetyAdherence = safetyAdherence;
+    if (workIndependently   !== undefined) record.workIndependently = workIndependently;
+    record.submittedBy = req.user._id;
+    await record.save();
+
+    // Same rule — only sync finalGrade for academic/report types
     if (grade && (record.type === 'academic' || record.type === 'report')) {
       await User.findByIdAndUpdate(record.student, {
         finalGrade:  grade,
@@ -142,6 +140,9 @@ const getMyGrades = async (req, res) => {
 // ── GET /api/grades/student/:studentId ───────────────────────────
 const getStudentGrade = async (req, res) => {
   try {
+    const student = await requireStudentAccess(req, res, req.params.studentId);
+    if (!student) return;
+
     const grades = await Grade.find({ student: req.params.studentId })
       .populate('submittedBy', 'name role')
       .sort({ updatedAt: -1 });
