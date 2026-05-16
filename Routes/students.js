@@ -7,13 +7,13 @@ const {
 } = require('../Controllers/studentController');
 const { protect, authorise } = require('../middleware/auth');
 
-router.get('/',                    protect, authorise('admin', 'academic', 'industrial'), getStudents);
+router.get('/',                    protect, authorise('admin', 'academic', 'industrial', 'company_manager'), getStudents);
 
 // stats must be declared BEFORE /:id so Express doesn't treat
 // the literal string "stats" as a MongoDB ObjectId parameter.
 router.get('/stats',               protect, authorise('academic', 'admin'), getStudentStats);
 
-router.get('/:id',                 protect, authorise('admin', 'academic', 'industrial'), getStudent);
+router.get('/:id',                 protect, authorise('admin', 'academic', 'industrial', 'company_manager'), getStudent);
 router.put('/:id',                 protect, authorise('admin'),                           updateStudent);
 router.put('/:id/assign',          protect, authorise('admin'),                           assignStudent);
 router.delete('/:id/assign',       protect, authorise('admin'),                           unassignStudent);
